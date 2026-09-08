@@ -1,0 +1,115 @@
+---
+import SiteShell from "../layouts/SiteShell.astro";
+import { getEnv } from "@lib/cloudflare";
+import { isAdmin } from "@lib/admin";
+
+const env = await getEnv(Astro);
+const loggedIn = await isAdmin(Astro.request, env);
+---
+
+<SiteShell title="300 · Redirect mounts">
+  {!loggedIn ? (
+    <main class="redirect-login">
+      <section class="redirect-card">
+        <p class="eyebrow">RE'PLAYER / 300</p>
+        <h1>Redirect mounts</h1>
+        <p>Use the administrator password to manage URL-to-URL compatibility redirects.</p>
+        <form id="redirectLogin" class="redirect-form">
+          <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus /></label>
+          <button type="submit">Sign in</button>
+          <output id="redirectLoginStatus" role="status"></output>
+        </form>
+      </section>
+    </main>
+  ) : (
+    <main class="redirect-page">
+      <header class="redirect-header">
+        <div>
+          <p class="eyebrow">RE'PLAYER / 300</p>
+          <h1>Redirect mounts</h1>
+          <p>Internal paths are stored as <code>/root/...</code>; visitors are redirected between public URLs.</p>
+        </div>
+        <a class="back-link" href="/admin">Admin</a>
+      </header>
+      <section class="redirect-panel">
+        <form id="redirectForm" class="redirect-grid">
+          <label>Source internal path<input name="sourcePath" placeholder="/root/old.mp4" required /></label>
+          <span class="arrow" aria-hidden="true">→</span>
+          <label>Target internal path<input name="targetPath" placeholder="/root/tree/new.mp4" required /></label>
+          <button type="submit">Add / update</button>
+        </form>
+        <p class="hint">Example: <code>/root/old.mp4</code> → <code>/root/tree/new.mp4</code> becomes <code>/Local/Pash/old.mp4</code> → <code>/Tree/new.mp4</code>.</p>
+        <output id="redirectStatus" role="status"></output>
+      </section>
+      <section class="redirect-panel">
+        <div class="panel-title"><h2>Configured redirects</h2><button id="refreshRedirects" type="button">Refresh</button></div>
+        <div class="redirect-table-wrap"><table><thead><tr><th>Internal source</th><th>Public URL</th><th>Internal target</th><th>Public URL</th><th></th></tr></thead><tbody id="redirectRows"><tr><td colspan="5">Loading...</td></tr></tbody></table></div>
+      </section>
+    </main>
+  )}
+
+  <script>
+    async function json<T = Record<string, any>>(url: string, init?: RequestInit): Promise<T> {
+      const response = await fetch(url, init);
+      const data = await response.json().catch(() => ({})) as Record<string, any>;
+      if (!response.ok || !data.ok) throw new Error(data.details || data.error || "Request failed.");
+      return data as T;
+    }
+    const form = document.querySelector<HTMLFormElement>("#redirectLogin");
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.querySelector<HTMLOutputElement>("#redirectLoginStatus");
+      const password = new FormData(form).get("password");
+      try {
+        await json("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+        location.reload();
+      } catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Sign-in failed."; }
+    });
+
+    const redirectForm = document.querySelector<HTMLFormElement>("#redirectForm");
+    const rows = document.querySelector<HTMLElement>("#redirectRows");
+    const status = document.querySelector<HTMLOutputElement>("#redirectStatus");
+    const esc = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
+    const load = async () => {
+      if (!rows) return;
+      try {
+        const data = await json<{ items: Array<{ id: string; sourcePath: string; sourceUrl: string; targetPath: string; targetUrl: string }> }>("/api/admin/redirects");
+        rows.innerHTML = data.items.length ? data.items.map((item: any) => `<tr><td><code>${esc(item.sourcePath)}</code></td><td><a href="${esc(item.sourceUrl)}">${esc(item.sourceUrl)}</a></td><td><code>${esc(item.targetPath)}</code></td><td><a href="${esc(item.targetUrl)}">${esc(item.targetUrl)}</a></td><td><button type="button" data-delete="${esc(item.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="5">No redirect mounts yet.</td></tr>';
+      } catch (error) { rows.innerHTML = `<tr><td colspan="5">${esc(error instanceof Error ? error.message : "Load failed.")}</td></tr>`; }
+    };
+    redirectForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(redirectForm).entries());
+      try { await json("/api/admin/redirects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) }); redirectForm.reset(); if (status) status.textContent = "Saved."; await load(); }
+      catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Save failed."; }
+    });
+    rows?.addEventListener("click", async (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-delete]");
+      if (!button || !confirm("Delete this redirect mount?")) return;
+      try { await json("/api/admin/redirects/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: button.dataset.delete }) }); await load(); }
+      catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Delete failed."; }
+    });
+    document.querySelector("#refreshRedirects")?.addEventListener("click", () => void load());
+    void load();
+  </script>
+
+  <style>
+    :global(html), :global(body) { margin: 0; min-height: 100%; background: #eef5fa; color: #17374f; font-family: Inter, system-ui, sans-serif; }
+    .redirect-page, .redirect-login { min-height: 100vh; box-sizing: border-box; padding: clamp(22px, 5vw, 56px); }
+    .redirect-login { display: grid; place-items: center; }
+    .redirect-card, .redirect-panel { border: 1px solid #cbdce8; background: #fbfdff; box-shadow: 5px 5px 0 rgb(45 134 199 / 10%); }
+    .redirect-card { width: min(440px, 100%); padding: 32px; }
+    .redirect-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; max-width: 1180px; margin: 0 auto 28px; }
+    .eyebrow { margin: 0 0 8px; color: #2d86c7; font: 600 11px Consolas, monospace; letter-spacing: .16em; }
+    h1 { margin: 0 0 10px; font-size: clamp(26px, 4vw, 42px); font-weight: 500; } h2 { margin: 0; font-size: 18px; font-weight: 600; }
+    p { color: #69869b; line-height: 1.55; } code { color: #145887; }
+    .back-link { color: #145887; text-decoration: none; } .redirect-panel { max-width: 1180px; margin: 0 auto 20px; padding: 18px; }
+    .redirect-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+    label { display: grid; gap: 6px; color: #245474; font-size: 12px; } input { min-width: 0; padding: 10px; border: 1px solid #9fc8e3; background: #fff; color: #17374f; font: 13px Consolas, monospace; }
+    button { padding: 10px 14px; border: 1px solid #2d86c7; background: #d8ebf7; color: #145887; cursor: pointer; } button:hover { background: #b8e9ff; }
+    .arrow { padding-bottom: 9px; color: #2d86c7; font-size: 20px; } .hint { margin: 14px 0 0; font-size: 12px; } output { display: block; margin-top: 10px; color: #2b6f9c; }
+    .panel-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; } .redirect-table-wrap { overflow: auto; }
+    table { width: 100%; min-width: 820px; border-collapse: collapse; } th, td { padding: 10px 8px; border-bottom: 1px solid #dce8ef; text-align: left; font-size: 12px; } th { color: #69869b; font-weight: 600; } td a { color: #2d86c7; }
+    @media (max-width: 760px) { .redirect-header { display: block; } .back-link { display: inline-block; margin-top: 8px; } .redirect-grid { grid-template-columns: 1fr; } .arrow { display: none; } }
+  </style>
+</SiteShell>
