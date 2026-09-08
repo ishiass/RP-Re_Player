@@ -1,8 +1,8 @@
 name = "rp"
-compatibility_date = "2026-07-14"
+compatibility_date = "2026-09-06"
 keep_vars = true
 
 [[d1_databases]]
 binding = "DB"
 database_name = "re-play"
-database_id = "269494cb-1be0-4292-adbb-15c32c29255f"
+database_id = ""
