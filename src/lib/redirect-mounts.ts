@@ -46,7 +46,9 @@ function mapRow(row: any): RedirectMount {
 }
 
 function routablePath(path: string, label: string) {
-  const normalized = normalizeRootPath(path);
+  const normalizedParts = normalizeRootPath(path).split("/").filter(Boolean);
+  if (normalizedParts[1]?.toLocaleLowerCase() === "tree") normalizedParts[1] = "tree";
+  const normalized = `/${normalizedParts.join("/")}`;
   const parts = normalized.split("/").filter(Boolean).slice(1);
   if (!parts.length) throw new Error(`${label} must point to a mounted item.`);
   if (parts.some((part) => part === "." || part === ".." || /[\\/\u0000-\u001f\u007f]/.test(part))) {
