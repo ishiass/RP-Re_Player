@@ -8,15 +8,16 @@ const loggedIn = await isAdmin(Astro.request, env);
 ---
 
 <SiteShell title="300 · Redirect mounts">
+  <div id="redirect300" data-lang="en">
   {!loggedIn ? (
     <main class="redirect-login">
       <section class="redirect-card">
         <p class="eyebrow">RE'PLAYER / 300</p>
-        <h1>Redirect mounts</h1>
-        <p>Use the administrator password to manage URL-to-URL compatibility redirects.</p>
+        <h1 data-i18n="title">Redirect mounts</h1>
+        <p data-i18n="loginCopy">Use the administrator password to manage URL-to-URL compatibility redirects.</p>
         <form id="redirectLogin" class="redirect-form">
-          <label>Password<input name="password" type="password" autocomplete="current-password" required autofocus /></label>
-          <button type="submit">Sign in</button>
+          <label><span data-i18n="password">Password</span><input name="password" type="password" autocomplete="current-password" required autofocus /></label>
+          <button type="submit" data-i18n="signIn">Sign in</button>
           <output id="redirectLoginStatus" role="status"></output>
         </form>
       </section>
@@ -26,29 +27,75 @@ const loggedIn = await isAdmin(Astro.request, env);
       <header class="redirect-header">
         <div>
           <p class="eyebrow">RE'PLAYER / 300</p>
-          <h1>Redirect mounts</h1>
-          <p>Internal paths are stored as <code>/root/...</code>; visitors are redirected between public URLs.</p>
+          <h1 data-i18n="title">Redirect mounts</h1>
+          <p data-i18n="pageCopy">Internal paths are stored as <code>/root/...</code>; visitors are redirected between public URLs.</p>
         </div>
-        <a class="back-link" href="/admin">Admin</a>
+        <a class="back-link" href="/admin" data-i18n="admin">Admin</a>
       </header>
       <section class="redirect-panel">
         <form id="redirectForm" class="redirect-grid">
-          <label>Source internal path<input name="sourcePath" placeholder="/root/old.mp4" required /></label>
+          <label><span data-i18n="sourcePath">Source internal path</span><input name="sourcePath" placeholder="/root/old.mp4" data-i18n-placeholder="sourcePlaceholder" data-auto-root required /></label>
           <span class="arrow" aria-hidden="true">→</span>
-          <label>Target internal path<input name="targetPath" placeholder="/root/tree/new.mp4" required /></label>
-          <button type="submit">Add / update</button>
+          <label><span data-i18n="targetPath">Target internal path</span><input name="targetPath" placeholder="/root/tree/new.mp4" data-i18n-placeholder="targetPlaceholder" data-auto-root required /></label>
+          <button type="submit" data-i18n="save">Add / update</button>
         </form>
-        <p class="hint">Example: <code>/root/old.mp4</code> → <code>/root/tree/new.mp4</code> becomes <code>/Local/Pash/old.mp4</code> → <code>/Tree/new.mp4</code>.</p>
+        <p class="hint" data-i18n="example">Example: <code>/root/old.mp4</code> → <code>/root/tree/new.mp4</code> becomes <code>/Local/Pash/old.mp4</code> → <code>/Tree/new.mp4</code>.</p>
         <output id="redirectStatus" role="status"></output>
       </section>
       <section class="redirect-panel">
-        <div class="panel-title"><h2>Configured redirects</h2><button id="refreshRedirects" type="button">Refresh</button></div>
-        <div class="redirect-table-wrap"><table><thead><tr><th>Internal source</th><th>Public URL</th><th>Internal target</th><th>Public URL</th><th></th></tr></thead><tbody id="redirectRows"><tr><td colspan="5">Loading...</td></tr></tbody></table></div>
+        <div class="panel-title"><h2 data-i18n="configured">Configured redirects</h2><button id="refreshRedirects" type="button" data-i18n="refresh">Refresh</button></div>
+        <div class="redirect-table-wrap"><table><thead><tr><th data-i18n="sourcePath">Internal source</th><th data-i18n="publicUrl">Public URL</th><th data-i18n="targetPath">Internal target</th><th data-i18n="publicUrl">Public URL</th><th><span class="sr-only" data-i18n="actions">Actions</span></th></tr></thead><tbody id="redirectRows"><tr><td colspan="5" data-i18n="loading">Loading...</td></tr></tbody></table></div>
       </section>
     </main>
   )}
+  </div>
 
   <script>
+    type Lang = "en" | "zh" | "ja";
+    const root = document.querySelector<HTMLElement>("#redirect300");
+    const translations: Record<Lang, Record<string, string>> = {
+      en: {
+        title: "Redirect mounts", loginCopy: "Use the administrator password to manage URL-to-URL compatibility redirects.", password: "Password", signIn: "Sign in", admin: "Admin", pageCopy: "Internal paths are stored as /root/...; visitors are redirected between public URLs.", sourcePath: "Source internal path", targetPath: "Target internal path", sourcePlaceholder: "/root/old.mp4", targetPlaceholder: "/root/tree/new.mp4", save: "Add / update", example: "Example: /root/old.mp4 → /root/tree/new.mp4 becomes /Local/Pash/old.mp4 → /Tree/new.mp4.", configured: "Configured redirects", refresh: "Refresh", publicUrl: "Public URL", actions: "Actions", loading: "Loading...", empty: "No redirect mounts yet.", saved: "Saved.", delete: "Delete", deleteConfirm: "Delete this redirect mount?", saveFailed: "Save failed.", loadFailed: "Load failed.", deleteFailed: "Delete failed.", signInFailed: "Sign-in failed."
+      },
+      zh: {
+        title: "跳转挂载", loginCopy: "请输入管理员密码以管理 URL 到 URL 的兼容跳转。", password: "密码", signIn: "登录", admin: "管理后台", pageCopy: "内部路径保存为 /root/...；访客访问时将在公开 URL 之间跳转。", sourcePath: "源内部路径", targetPath: "目标内部路径", sourcePlaceholder: "/root/旧文件.mp4", targetPlaceholder: "/root/tree/新文件.mp4", save: "添加 / 更新", example: "示例：/root/old.mp4 → /root/tree/new.mp4 将变为 /Local/Pash/old.mp4 → /Tree/new.mp4。", configured: "已配置的跳转", refresh: "刷新", publicUrl: "公开 URL", actions: "操作", loading: "正在加载…", empty: "暂无跳转挂载。", saved: "已保存。", delete: "删除", deleteConfirm: "删除此跳转挂载？", saveFailed: "保存失败。", loadFailed: "加载失败。", deleteFailed: "删除失败。", signInFailed: "登录失败。"
+      },
+      ja: {
+        title: "転送マウント", loginCopy: "管理者パスワードを入力して URL 間の互換転送を管理します。", password: "パスワード", signIn: "ログイン", admin: "管理画面", pageCopy: "内部パスは /root/... として保存され、訪問者は公開 URL 間で転送されます。", sourcePath: "転送元内部パス", targetPath: "転送先内部パス", sourcePlaceholder: "/root/old.mp4", targetPlaceholder: "/root/tree/new.mp4", save: "追加 / 更新", example: "例：/root/old.mp4 → /root/tree/new.mp4 は /Local/Pash/old.mp4 → /Tree/new.mp4 になります。", configured: "設定済み転送", refresh: "更新", publicUrl: "公開 URL", actions: "操作", loading: "読み込み中…", empty: "転送マウントはありません。", saved: "保存しました。", delete: "削除", deleteConfirm: "この転送マウントを削除しますか？", saveFailed: "保存に失敗しました。", loadFailed: "読み込みに失敗しました。", deleteFailed: "削除に失敗しました。", signInFailed: "ログインに失敗しました。"
+      }
+    };
+    let lang: Lang = "en";
+    let languageReadyResolve: (() => void) | undefined;
+    const languageReady = new Promise<void>((resolve) => { languageReadyResolve = resolve; });
+    const validLang = (value: string): value is Lang => value === "en" || value === "zh" || value === "ja";
+    const cookieValue = (name: string) => document.cookie.split("; ").find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) || "";
+    const setCookie = (name: string, value: string) => { document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=31536000; SameSite=Lax`; };
+    const t = (key: string) => translations[lang][key] || translations.en[key] || key;
+    const correctInternalPath = (value: string) => {
+      const cleaned = value.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+      if (!cleaned) return "";
+      const parts = cleaned.split("/").filter(Boolean);
+      if (parts[0]?.toLocaleLowerCase() === "root") parts.shift();
+      if (parts[0]?.toLocaleLowerCase() === "tree") {
+        parts[0] = "tree";
+        return `/root/${parts.join("/")}`;
+      }
+      return `/root/${parts.join("/")}`;
+    };
+    const applyLanguage = (value: Lang) => {
+      lang = value;
+      if (root) root.dataset.lang = value;
+      document.documentElement.lang = value === "zh" ? "zh-CN" : value;
+      root?.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => { element.textContent = t(element.dataset.i18n || ""); });
+      root?.querySelectorAll<HTMLInputElement>("[data-i18n-placeholder]").forEach((element) => { element.placeholder = t(element.dataset.i18nPlaceholder || ""); });
+    };
+    async function detectLanguage(): Promise<Lang> {
+      try { const response = await fetch("/api/public/geo"); const data = await response.json() as { ok?: boolean; lang?: string }; if (data.ok && data.lang && validLang(data.lang)) return data.lang; } catch { /* English fallback matches the visitor page. */ }
+      const browser = (navigator.language || "").toLowerCase();
+      return browser.startsWith("zh") ? "zh" : browser.startsWith("ja") ? "ja" : "en";
+    }
+    (async () => { const saved = cookieValue("rp_l"); const selected = validLang(saved) ? saved : await detectLanguage(); setCookie("rp_l", selected); applyLanguage(selected); languageReadyResolve?.(); })();
+
     async function json<T = Record<string, any>>(url: string, init?: RequestInit): Promise<T> {
       const response = await fetch(url, init);
       const data = await response.json().catch(() => ({})) as Record<string, any>;
@@ -63,7 +110,7 @@ const loggedIn = await isAdmin(Astro.request, env);
       try {
         await json("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
         location.reload();
-      } catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Sign-in failed."; }
+      } catch (error) { if (status) status.textContent = error instanceof Error && error.message !== "Request failed." ? error.message : t("signInFailed"); }
     });
 
     const redirectForm = document.querySelector<HTMLFormElement>("#redirectForm");
@@ -72,22 +119,29 @@ const loggedIn = await isAdmin(Astro.request, env);
     const esc = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
     const load = async () => {
       if (!rows) return;
+      await languageReady;
       try {
         const data = await json<{ items: Array<{ id: string; sourcePath: string; sourceUrl: string; targetPath: string; targetUrl: string }> }>("/api/admin/redirects");
-        rows.innerHTML = data.items.length ? data.items.map((item: any) => `<tr><td><code>${esc(item.sourcePath)}</code></td><td><a href="${esc(item.sourceUrl)}">${esc(item.sourceUrl)}</a></td><td><code>${esc(item.targetPath)}</code></td><td><a href="${esc(item.targetUrl)}">${esc(item.targetUrl)}</a></td><td><button type="button" data-delete="${esc(item.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="5">No redirect mounts yet.</td></tr>';
-      } catch (error) { rows.innerHTML = `<tr><td colspan="5">${esc(error instanceof Error ? error.message : "Load failed.")}</td></tr>`; }
+        rows.innerHTML = data.items.length ? data.items.map((item: any) => `<tr><td><code>${esc(item.sourcePath)}</code></td><td><a href="${esc(item.sourceUrl)}">${esc(item.sourceUrl)}</a></td><td><code>${esc(item.targetPath)}</code></td><td><a href="${esc(item.targetUrl)}">${esc(item.targetUrl)}</a></td><td><button type="button" data-delete="${esc(item.id)}">${esc(t("delete"))}</button></td></tr>`).join("") : `<tr><td colspan="5">${esc(t("empty"))}</td></tr>`;
+      } catch (error) { rows.innerHTML = `<tr><td colspan="5">${esc(error instanceof Error && error.message !== "Request failed." ? error.message : t("loadFailed"))}</td></tr>`; }
     };
     redirectForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(redirectForm).entries());
-      try { await json("/api/admin/redirects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) }); redirectForm.reset(); if (status) status.textContent = "Saved."; await load(); }
-      catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Save failed."; }
+      redirectForm.querySelectorAll<HTMLInputElement>("[data-auto-root]").forEach((input) => { input.value = correctInternalPath(input.value); });
+      values.sourcePath = correctInternalPath(String(values.sourcePath || ""));
+      values.targetPath = correctInternalPath(String(values.targetPath || ""));
+      try { await json("/api/admin/redirects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) }); redirectForm.reset(); if (status) status.textContent = t("saved"); await load(); }
+      catch (error) { if (status) status.textContent = error instanceof Error && error.message !== "Request failed." ? error.message : t("saveFailed"); }
+    });
+    document.querySelectorAll<HTMLInputElement>("[data-auto-root]").forEach((input) => {
+      input.addEventListener("blur", () => { if (input.value.trim()) input.value = correctInternalPath(input.value); });
     });
     rows?.addEventListener("click", async (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-delete]");
-      if (!button || !confirm("Delete this redirect mount?")) return;
+      if (!button || !confirm(t("deleteConfirm"))) return;
       try { await json("/api/admin/redirects/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: button.dataset.delete }) }); await load(); }
-      catch (error) { if (status) status.textContent = error instanceof Error ? error.message : "Delete failed."; }
+      catch (error) { if (status) status.textContent = error instanceof Error && error.message !== "Request failed." ? error.message : t("deleteFailed"); }
     });
     document.querySelector("#refreshRedirects")?.addEventListener("click", () => void load());
     void load();
