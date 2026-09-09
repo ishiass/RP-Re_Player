@@ -1,5 +1,5 @@
 name = "rp"
-compatibility_date = "2026-07-14"
+compatibility_date = "2026-09-06"
 keep_vars = true
 
 [[d1_databases]]
