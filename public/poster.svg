@@ -1,18 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Re Player archive signal placeholder">
-  <rect width="1280" height="720" fill="#d2d2cc"/>
-  <rect x="38" y="38" width="1204" height="644" fill="#101010" stroke="#f0f0ea" stroke-width="2"/>
-  <g fill="#d2d2cc">
-    <path d="M58 66h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58zm0 58h18v32H58z"/>
-    <path d="M1204 66h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18zm0 58h18v32h-18z"/>
-  </g>
-  <rect x="106" y="92" width="1068" height="476" fill="#171717" stroke="#7b7b76" stroke-width="2"/>
-  <path d="M106 174h1068M106 490h1068M322 92v476M958 92v476" stroke="#4d4d49" stroke-width="2"/>
-  <circle cx="640" cy="330" r="134" fill="none" stroke="#d8d8d2" stroke-width="4"/>
-  <circle cx="640" cy="330" r="72" fill="none" stroke="#ff174f" stroke-width="6"/>
-  <path d="M640 142v376M452 330h376" stroke="#d8d8d2" stroke-width="3"/>
-  <path d="m616 276 92 54-92 54V276Z" fill="#ff174f"/>
-  <rect x="106" y="600" width="530" height="38" fill="#f0f0ea"/>
-  <rect x="654" y="600" width="520" height="38" fill="#ff174f"/>
-  <text x="122" y="627" font-family="Consolas,Courier New,monospace" font-size="24" font-weight="700" fill="#101010">RE-PLAYER // ARCHIVE FEED</text>
-  <text x="1158" y="627" text-anchor="end" font-family="Consolas,Courier New,monospace" font-size="24" font-weight="700" fill="#101010">NO SIGNAL / CH-00</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Re Player buffering placeholder">
+  <rect width="1280" height="720" fill="#f0f8ff"/>
+  <path d="M0 120h1280M0 240h1280M0 360h1280M0 480h1280M0 600h1280M160 0v720M320 0v720M480 0v720M640 0v720M800 0v720M960 0v720M1120 0v720" fill="none" stroke="#dcecf5" stroke-width="2" opacity=".52"/>
+  <rect x="22" y="22" width="1236" height="676" rx="8" fill="none" stroke="#c5ddea" stroke-width="3"/>
+  <image href="/favicon.svg" x="38" y="38" width="32" height="32" transform="rotate(45 54 54)"/>
+  <path d="M92 54h136" stroke="#c5ddea" stroke-width="2"/>
+  <circle cx="640" cy="360" r="86" fill="none" stroke="#b9dff2" stroke-width="3" stroke-dasharray="4 10"/>
+  <circle cx="640" cy="360" r="58" fill="#f0f8ff" stroke="#c5ddea" stroke-width="2"/>
+  <text x="640" y="369" text-anchor="middle" font-family="Segoe UI, Noto Sans SC, Noto Sans JP, sans-serif" font-size="28" font-weight="700" letter-spacing="1" fill="#a5f2f3">Buffering···</text>
+  <path d="M582 410h116" stroke="#a5f2f3" stroke-width="3" stroke-linecap="round" opacity=".75"/>
 </svg>
