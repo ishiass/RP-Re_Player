@@ -2013,9 +2013,21 @@ textarea:focus-visible {
   background: var(--player-empty-bg, var(--player));
 }
 
-.player-stage[data-signal="unstable"] .video-frame,
+.player-stage[data-signal="transfer"] .image-frame,
+.player-stage[data-signal="transfer"] .audio-frame,
 .player-stage[data-signal="unstable"] .image-frame,
 .player-stage[data-signal="unstable"] .audio-frame {
+  visibility: hidden;
+}
+
+.player-stage[data-signal="transfer"] .video-frame,
+.player-stage[data-signal="unstable"] .video-frame {
+  z-index: 9;
+  background: transparent;
+}
+
+.player-stage[data-signal="transfer"] .video-frame video,
+.player-stage[data-signal="unstable"] .video-frame video {
   visibility: hidden;
 }
 
@@ -2031,6 +2043,7 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
+.player-stage[data-signal="transfer"] .buffering-overlay,
 .player-stage[data-signal="unstable"] .buffering-overlay {
   display: grid;
 }
