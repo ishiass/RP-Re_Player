@@ -96,6 +96,7 @@ body:has(.media-app[data-theme="retro"]) {
 }
 
 .media-app[data-theme="retro"] .player-stage {
+  --player-empty-bg: #dbd7d2;
   border: 5px double #30302d;
   border-radius: 0;
   background: #111413;

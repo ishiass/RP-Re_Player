@@ -92,6 +92,7 @@ body:has(.media-app[data-theme="future"]) {
 }
 
 .media-app[data-theme="future"] .player-stage {
+  --player-empty-bg: #f0f8ff;
   border-color: #c5dfe9;
   border-radius: 8px;
   background: #12232c;

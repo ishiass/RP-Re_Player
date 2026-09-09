@@ -87,6 +87,7 @@ body:has(.media-app[data-theme="gray"]) {
 }
 
 .media-app[data-theme="gray"] .player-stage {
+  --player-empty-bg: #dbd7d2;
   border-color: #aeb9be;
   border-radius: 6px;
   background: #252c30;
