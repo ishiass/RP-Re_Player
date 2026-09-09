@@ -1,11 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Re Player buffering placeholder">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Re Player player placeholder">
   <rect width="1280" height="720" fill="#f0f8ff"/>
   <path d="M0 120h1280M0 240h1280M0 360h1280M0 480h1280M0 600h1280M160 0v720M320 0v720M480 0v720M640 0v720M800 0v720M960 0v720M1120 0v720" fill="none" stroke="#dcecf5" stroke-width="2" opacity=".52"/>
   <rect x="22" y="22" width="1236" height="676" rx="8" fill="none" stroke="#c5ddea" stroke-width="3"/>
-  <image href="/favicon.svg" x="38" y="38" width="32" height="32" transform="rotate(45 54 54)"/>
+  <g transform="translate(38 38) scale(.5)">
+    <rect width="64" height="64" rx="14" fill="#f0f8ff"/>
+    <ellipse cx="32" cy="32" rx="25" ry="11" fill="none" stroke="#5b9bd5" stroke-width="2" transform="rotate(-25 32 32)"/>
+    <ellipse cx="32" cy="32" rx="25" ry="11" fill="none" stroke="#b0e0e6" stroke-width="2" transform="rotate(25 32 32)"/>
+    <path d="M32 12 35.5 28.5 47 32l-11.5 3.5L32 52l-3.5-16.5L17 32l11.5-3.5Z" fill="#d4f1f4" stroke="#b0e0e6" stroke-width="2" stroke-linejoin="round"/>
+  </g>
   <path d="M92 54h136" stroke="#c5ddea" stroke-width="2"/>
   <circle cx="640" cy="360" r="86" fill="none" stroke="#b9dff2" stroke-width="3" stroke-dasharray="4 10"/>
   <circle cx="640" cy="360" r="58" fill="#f0f8ff" stroke="#c5ddea" stroke-width="2"/>
-  <text x="640" y="369" text-anchor="middle" font-family="Segoe UI, Noto Sans SC, Noto Sans JP, sans-serif" font-size="28" font-weight="700" letter-spacing="1" fill="#a5f2f3">Buffering···</text>
-  <path d="M582 410h116" stroke="#a5f2f3" stroke-width="3" stroke-linecap="round" opacity=".75"/>
+  <path d="M582 410h116" stroke="#c5ddea" stroke-width="3" stroke-linecap="round" opacity=".75"/>
 </svg>

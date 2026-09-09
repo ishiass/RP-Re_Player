@@ -216,11 +216,6 @@ const introMaxSeconds = (() => {
 
       <main class="player-pane">
         <section id="playerStage" class="player-stage">
-          <div id="bufferingOverlay" class="buffering-overlay" aria-live="polite">
-            <img class="buffering-overlay-mark" src="/favicon.svg" alt="" aria-hidden="true" />
-            <strong id="bufferingLabel" class="buffering-overlay-label" data-i18n="bufferingOverlay">Buffering···</strong>
-          </div>
-
           <div id="emptyPlayer" class="player-empty">
             <span class="player-empty-mark"><Play size={34} fill="currentColor" /></span>
             <strong data-i18n="nothingPlaying">Nothing playing</strong>
@@ -389,7 +384,6 @@ const introMaxSeconds = (() => {
         subFailed: "The ASS subtitle could not be loaded.",
         playing: "Now playing",
         buffering: "Buffering...",
-        bufferingOverlay: "Buffering···",
         playCount: "Play count",
         completionRate: "Completion rate",
         play: "Play",
@@ -434,7 +428,6 @@ const introMaxSeconds = (() => {
         subFailed: "ASS 字幕加载失败。",
         playing: "正在播放",
         buffering: "正在缓冲...",
-        bufferingOverlay: "缓冲中···",
         playCount: "播放次数",
         completionRate: "完播率",
         play: "播放",
@@ -479,7 +472,6 @@ const introMaxSeconds = (() => {
         subFailed: "ASS字幕を読み込めませんでした。",
         playing: "再生中",
         buffering: "バッファリング中...",
-        bufferingOverlay: "バッファリング中···",
         playCount: "再生回数",
         completionRate: "完走率",
         play: "再生",
@@ -575,7 +567,6 @@ const introMaxSeconds = (() => {
       parent: document.querySelector<HTMLButtonElement>("#parentBtn")!,
       refresh: document.querySelector<HTMLButtonElement>("#refreshBtn")!,
       stage: document.querySelector<HTMLElement>("#playerStage")!,
-      bufferingLabel: document.querySelector<HTMLElement>("#bufferingLabel")!,
       empty: document.querySelector<HTMLElement>("#emptyPlayer")!,
       videoFrame: document.querySelector<HTMLElement>("#videoFrame")!,
       video: document.querySelector<HTMLVideoElement>("#videoPlayer")!,
@@ -1253,8 +1244,6 @@ const introMaxSeconds = (() => {
 
     function applyLanguage() {
       document.documentElement.lang = s.lang === "zh" ? "zh-CN" : s.lang === "ja" ? "ja" : "en";
-      const brand = document.querySelector<HTMLElement>(".app-topbar .app-brand strong");
-      if (brand) d.bufferingLabel.style.color = getComputedStyle(brand).color;
       document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
         const key = el.dataset.i18n as keyof (typeof c)["en"];
         if (key && c[s.lang][key]) el.textContent = t(key);
