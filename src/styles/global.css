@@ -2008,6 +2008,53 @@ textarea:focus-visible {
   animation-timing-function: steps(14, end);
 }
 
+/* Keep the buffering surface visually consistent with the empty-player state. */
+.media-app .player-stage[data-signal="unstable"] {
+  background: var(--player-empty-bg, var(--player));
+}
+
+.player-stage[data-signal="unstable"] .video-frame,
+.player-stage[data-signal="unstable"] .image-frame,
+.player-stage[data-signal="unstable"] .audio-frame {
+  visibility: hidden;
+}
+
+.buffering-overlay {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: none;
+  place-items: center;
+  overflow: hidden;
+  background: var(--player-empty-bg, var(--player));
+  color: var(--accent-dark);
+  pointer-events: none;
+}
+
+.player-stage[data-signal="unstable"] .buffering-overlay {
+  display: grid;
+}
+
+.buffering-overlay-mark {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+
+.buffering-overlay-label {
+  margin: 0;
+  color: inherit;
+  font-size: clamp(16px, 1.8vw, 24px);
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .player-stage[data-signal="interrupted"] {
   animation: signal-interrupt 520ms steps(3, end) infinite;
 }
@@ -3473,6 +3520,13 @@ body:has(.login-screen)::before {
   .media-app .app-topbar .app-brand strong {
     padding: 3px 5px;
     font-size: 12px;
+  }
+
+  .buffering-overlay-mark {
+    top: 14px;
+    left: 14px;
+    width: 24px;
+    height: 24px;
   }
 }
 
