@@ -1,9 +1,3 @@
-  if (pathname === "/Action" || pathname.startsWith("/Action/")) {
-    return context.rewrite(new URL(`/action${pathname.slice("/Action".length)}`, context.url));
-  }
-
-
-
 import type { MiddlewareHandler } from "astro";
 import { getEnv } from "@lib/cloudflare";
 import { redirectTargetForPublicPath } from "@lib/redirect-mounts";
