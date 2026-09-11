@@ -5,5 +5,8 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   if (pathname === "/Tree" || pathname.startsWith("/Tree/")) {
     return context.rewrite(new URL(`/tree${pathname.slice("/Tree".length)}`, context.url));
   }
+  if (pathname === "/Action" || pathname.startsWith("/Action/")) {
+    return context.rewrite(new URL(`/action${pathname.slice("/Action".length)}`, context.url));
+  }
   return next();
 };

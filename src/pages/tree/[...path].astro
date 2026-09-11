@@ -17,7 +17,8 @@ try {
   item = null;
 }
 const env = await getEnv(Astro);
-if (item) void recordVisitorEvent(env, Astro.request, "media", item.path);
+// Await the write so direct Tree visits are reliably persisted before the request ends.
+if (item) await recordVisitorEvent(env, Astro.request, "media", item.path);
 const mediaUrl = item ? publicMediaPath(item.path) : "";
 ---
 
