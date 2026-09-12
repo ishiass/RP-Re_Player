@@ -25,7 +25,7 @@ const mediaUrl = item ? publicMediaPath(item.path) : "";
 <SiteShell title={item?.name || "Tree - Re-Player"}>
   <main class="tree-media-page">
     {item ? (
-      item.kind === "audio" ? <audio src={mediaUrl} controls preload="metadata" /> : item.kind === "image" ? <img src={mediaUrl} alt={item.name} /> : <video src={mediaUrl} controls playsinline preload="metadata" />
+      item.kind === "audio" ? <audio src={mediaUrl} controls autoplay preload="auto" /> : item.kind === "image" ? <img src={mediaUrl} alt={item.name} /> : <video src={mediaUrl} controls autoplay playsinline preload="auto" />
     ) : <p>Media not found.</p>}
   </main>
   <style>
