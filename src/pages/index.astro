@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Captions,
   FastForward,
+  File,
   FileImage,
   Film,
   Folder,
@@ -270,6 +271,11 @@ const introMaxSeconds = (() => {
             <img id="imageViewer" alt="" />
           </div>
 
+          <div id="fileFrame" class="file-frame" hidden>
+            <div id="fileDescription" class="file-description"></div>
+            <a id="fileDownload" class="primary-button file-download-button" href="#" download data-i18n="download">Download</a>
+          </div>
+
           <div id="audioFrame" class="audio-frame" hidden>
             <div class="audio-overview">
               <div class="audio-cover-shell">
@@ -355,6 +361,7 @@ const introMaxSeconds = (() => {
   <template id="iconVideo"><Film size={20} /></template>
   <template id="iconAudio"><Music2 size={20} /></template>
   <template id="iconImage"><FileImage size={20} /></template>
+  <template id="iconFile"><File size={20} /></template>
 
   <script>
     import JASSUB from "jassub";
@@ -377,6 +384,8 @@ const introMaxSeconds = (() => {
         video: "Video",
         audio: "Audio",
         image: "Image",
+        file: "File",
+        download: "Download",
         item: "item",
         items: "items",
         loadFailed: "Could not load this folder.",
@@ -421,6 +430,8 @@ const introMaxSeconds = (() => {
         video: "视频",
         audio: "音频",
         image: "图片",
+        file: "文件",
+        download: "下载",
         item: "项",
         items: "项",
         loadFailed: "无法读取此目录。",
@@ -465,6 +476,8 @@ const introMaxSeconds = (() => {
         video: "動画",
         audio: "音声",
         image: "画像",
+        file: "ファイル",
+        download: "ダウンロード",
         item: "件",
         items: "件",
         loadFailed: "フォルダーを読み込めませんでした。",
@@ -510,7 +523,8 @@ const introMaxSeconds = (() => {
       name: string;
       path: string;
       url?: string;
-      kind?: "video" | "audio" | "image";
+      kind?: "video" | "audio" | "image" | "file";
+      description?: string;
       artist?: string;
       poster?: string;
       sub?: string;
@@ -593,6 +607,9 @@ const introMaxSeconds = (() => {
       exitFullscreenIcon: document.querySelector<HTMLElement>("#exitFullscreenIcon")!,
       imageFrame: document.querySelector<HTMLElement>("#imageFrame")!,
       image: document.querySelector<HTMLImageElement>("#imageViewer")!,
+      fileFrame: document.querySelector<HTMLElement>("#fileFrame")!,
+      fileDescription: document.querySelector<HTMLElement>("#fileDescription")!,
+      fileDownload: document.querySelector<HTMLAnchorElement>("#fileDownload")!,
       audioFrame: document.querySelector<HTMLElement>("#audioFrame")!,
       audio: document.querySelector<HTMLAudioElement>("#audioPlayer")!,
       audioPlayToggle: document.querySelector<HTMLButtonElement>("#audioPlayToggle")!,
@@ -618,6 +635,7 @@ const introMaxSeconds = (() => {
       kind: document.querySelector<HTMLElement>("#kindBadge")!,
       subtitle: document.querySelector<HTMLElement>("#subtitleBadge")!,
       lyricsBadge: document.querySelector<HTMLElement>("#lyricsBadge")!,
+      nowPlaying: document.querySelector<HTMLElement>(".now-playing")!,
       title: document.querySelector<HTMLElement>("#mediaTitle")!,
       mediaPath: document.querySelector<HTMLElement>("#mediaPath")!,
       playerStatus: document.querySelector<HTMLElement>("#playerStatus")!,
@@ -728,6 +746,62 @@ const introMaxSeconds = (() => {
     const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (x) => e[x]);
     const t = (k: keyof (typeof c)["en"]) => c[s.lang][k];
     const displayPath = (path: string) => path.replace(/^\/root(?=\/|$)/, "") || "/";
+    function safeWebUrl(input: string) {
+      try {
+        const url = new URL(input.trim());
+        return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+      } catch {
+        return "";
+      }
+    }
+
+    function renderMarkdownInline(text: string) {
+      const pattern = /(!?)\[([^\]\n]{0,200})\]\(([^)\s]+)\)/g;
+      let html = "";
+      let last = 0;
+      for (const match of text.matchAll(pattern)) {
+        html += esc(text.slice(last, match.index));
+        const href = safeWebUrl(match[3]);
+        if (href) {
+          const label = esc(match[2]);
+          html += match[1]
+            ? `<img src="${esc(href)}" alt="${label}" loading="lazy" referrerpolicy="no-referrer" />`
+            : `<a href="${esc(href)}" target="_blank" rel="noreferrer">${label || esc(href)}</a>`;
+        } else {
+          html += esc(match[0]);
+        }
+        last = (match.index || 0) + match[0].length;
+      }
+      html += esc(text.slice(last));
+      return html;
+    }
+
+    function renderMarkdown(source: string) {
+      const blocks: string[] = [];
+      const paragraph: string[] = [];
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        blocks.push(`<p>${renderMarkdownInline(paragraph.join("\n")).replace(/\n/g, "<br>")}</p>`);
+        paragraph.length = 0;
+      };
+      for (const line of String(source || "").replace(/\r\n?/g, "\n").split("\n")) {
+        if (!line.trim()) {
+          flushParagraph();
+          continue;
+        }
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          flushParagraph();
+          const level = heading[1].length + 2;
+          blocks.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+          continue;
+        }
+        paragraph.push(line);
+      }
+      flushParagraph();
+      return blocks.join("");
+    }
+
     function updateVisitorUrl(path: string, mode: NavigationMode) {
       if (mode === "none") return;
       const next = visitorUrl(path);
@@ -802,7 +876,7 @@ const introMaxSeconds = (() => {
       }).join("\n");
     };
     const icon = (item: MediaItem) => {
-      const id = item.isDir ? "iconFolder" : item.kind === "audio" ? "iconAudio" : item.kind === "image" ? "iconImage" : "iconVideo";
+      const id = item.isDir ? "iconFolder" : item.kind === "audio" ? "iconAudio" : item.kind === "image" ? "iconImage" : item.kind === "file" ? "iconFile" : "iconVideo";
       return document.querySelector<HTMLTemplateElement>(`#${id}`)?.innerHTML ?? "";
     };
     const type = (item: MediaItem) => item.isDir ? "folder" : item.kind || "video";
@@ -819,8 +893,8 @@ const introMaxSeconds = (() => {
     }
 
     function renderStats() {
-      d.playerStats.hidden = !s.current;
-      if (!s.current) return;
+      d.playerStats.hidden = !s.current || s.current.kind === "file";
+      if (!s.current || s.current.kind === "file") return;
       d.playCount.textContent = `${t("playCount")}: ${s.stat.plays}`;
       d.completionRate.textContent = `${t("completionRate")}: ${s.stat.rate}%`;
     }
@@ -1278,7 +1352,7 @@ const introMaxSeconds = (() => {
           <span class="file-icon file-icon-${esc(type(item))}">${icon(item)}</span>
           <span class="file-copy">
             <strong>${esc(item.name)}</strong>
-            <small>${esc(s.query ? displayPath(item.path) : item.artist || t(type(item) as "folder" | "video" | "audio" | "image"))}</small>
+            <small>${esc(s.query ? displayPath(item.path) : item.artist || t(type(item) as "folder" | "video" | "audio" | "image" | "file"))}</small>
           </span>
         </button>
       `).join("");
@@ -1292,6 +1366,8 @@ const introMaxSeconds = (() => {
       d.mediaPath.textContent = s.current.artist || displayPath(s.current.path);
       d.subtitle.hidden = !s.current.sub;
       d.lyricsBadge.hidden = !s.current.lrc && !s.current.lrc2;
+      d.nowPlaying.hidden = s.current.kind === "file";
+      d.fileDownload.textContent = t("download");
     }
 
     async function load(path = s.path, query = d.search.value.trim(), navigation: NavigationMode = "none") {
@@ -1350,10 +1426,13 @@ const introMaxSeconds = (() => {
       d.video.removeAttribute("src");
       d.audio.removeAttribute("src");
       d.image.removeAttribute("src");
+      d.fileDownload.href = "#";
+      d.fileDescription.innerHTML = "";
       d.videoFrame.hidden = true;
       d.videoFrame.classList.remove("controls-hidden");
       window.clearTimeout(controlTimer);
       d.imageFrame.hidden = true;
+      d.fileFrame.hidden = true;
       d.audioFrame.hidden = true;
       d.audioFrame.classList.remove("is-playing");
       d.audioSeek.value = "0";
@@ -1414,6 +1493,14 @@ const introMaxSeconds = (() => {
         d.image.src = item.url || "";
         d.image.alt = item.name;
         recordStat("play");
+      } else if (item.kind === "file") {
+        d.stage.dataset.mode = "file";
+        delete d.stage.dataset.signal;
+        d.fileFrame.hidden = false;
+        d.fileDescription.innerHTML = renderMarkdown(item.description || "");
+        d.fileDownload.href = item.url || "#";
+        d.fileDownload.download = item.name;
+        setStatus(d.playerStatus);
       } else if (item.kind === "audio") {
         d.stage.dataset.mode = "audio";
         d.audioFrame.hidden = false;
