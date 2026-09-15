@@ -12,6 +12,7 @@ try {
   const parts = relative ? relative.split("/").map((part) => decodeURIComponent(part)) : [];
   if (parts.length && parts.every((part) => part && part !== "." && part !== ".." && !/[\\/\u0000-\u001f\u007f]/.test(part))) {
     item = await getItem(await getEnv(Astro), `/root/tree/${parts.join("/")}`);
+    if (item?.kind === "file") item = null;
   }
 } catch {
   item = null;
