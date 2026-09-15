@@ -1,6 +1,7 @@
 ---
 import {
   ChevronDown,
+  File,
   FileImage,
   Film,
   Folder,
@@ -165,16 +166,21 @@ const loggedIn = await isAdmin(Astro.request, env);
                   <option value="video" data-i18n="video">Video</option>
                   <option value="audio" data-i18n="audio">Audio</option>
                   <option value="image" data-i18n="image">Image</option>
+                  <option value="file" data-i18n="file">File</option>
                 </select>
               </label>
-              <label class="field">
+              <label id="posterField" class="field">
                 <span data-i18n="posterUrl">Poster URL</span>
                 <input name="poster" type="url" placeholder="https://example.com/poster.jpg" autocomplete="off" />
               </label>
             </div>
             <label class="field">
-              <span data-i18n="mediaUrl">Media URL</span>
+              <span id="urlLabel" data-i18n="mediaUrl">Media URL</span>
               <textarea name="url" required placeholder="https://example.com/video.mp4"></textarea>
+            </label>
+            <label id="descriptionField" class="field" hidden>
+              <span data-i18n="description">Description</span>
+              <textarea name="description" class="large-textarea" placeholder="Markdown is supported."></textarea>
             </label>
             <label id="subField" class="field">
               <span data-i18n="assUrl">ASS subtitle URL</span>
@@ -206,6 +212,7 @@ const loggedIn = await isAdmin(Astro.request, env);
         <template id="tableVideo"><Film size={18} /></template>
         <template id="tableAudio"><Music2 size={18} /></template>
         <template id="tableImage"><FileImage size={18} /></template>
+        <template id="tableFile"><File size={18} /></template>
         <template id="tableTrash"><Trash2 size={16} /></template>
         <template id="treeRoot"><FolderRoot size={18} /></template>
         <template id="treeFolder"><Folder size={17} /></template>
@@ -222,8 +229,8 @@ const loggedIn = await isAdmin(Astro.request, env);
         pageCopy: "Manage public media links, subtitles, and lyrics.", addFile: "Add file", refresh: "Refresh",
         name: "Name", path: "Path", type: "Type", subtitle: "Subtitles / Lyrics", source: "Source", actions: "Actions",
         loading: "Loading...", addMount: "Add pseudo mount", close: "Close", folder: "Folder", video: "Video",
-        audio: "Audio", image: "Image", posterUrl: "Poster URL", mediaUrl: "Media URL", assUrl: "ASS subtitle URL",
-        lrcUrl: "Lyrics URL", bilingual: "Bilingual lyrics", otherLrcUrl: "Other-language lyrics URL",
+        audio: "Audio", image: "Image", file: "File", posterUrl: "Poster URL", mediaUrl: "Media URL", url: "URL", assUrl: "ASS subtitle URL",
+        lrcUrl: "Lyrics URL", bilingual: "Bilingual lyrics", otherLrcUrl: "Other-language lyrics URL", description: "Description",
         cancel: "Cancel", create: "Create", empty: "No pseudo mounts yet", item: "item", items: "items",
         wrongPassword: "Incorrect password.", signingIn: "Signing in...", loadFailed: "Could not load pseudo mounts.",
         createFailed: "Could not create the pseudo mount.", created: "Pseudo mount created.", delete: "Delete",
@@ -235,8 +242,8 @@ const loggedIn = await isAdmin(Astro.request, env);
         signOut: "退出登录", storage: "存储", rootDirectory: "根目录", mediaFiles: "媒体文件", pseudoMounts: "伪挂载", pageCopy: "管理公开媒体链接、字幕及歌词。",
         addFile: "添加文件", refresh: "刷新", name: "文件名", path: "路径", type: "类型", subtitle: "字幕 / 歌词",
         source: "源链接", actions: "操作", loading: "正在加载...", addMount: "添加伪挂载", close: "关闭",
-        folder: "目录", video: "视频", audio: "音频", image: "图片", posterUrl: "封面链接", mediaUrl: "媒体链接",
-        assUrl: "ASS 字幕链接", lrcUrl: "歌词链接", bilingual: "是否双语", otherLrcUrl: "另一语言歌词链接",
+        folder: "目录", video: "视频", audio: "音频", image: "图片", file: "文件", posterUrl: "封面链接", mediaUrl: "媒体链接", url: "链接",
+        assUrl: "ASS 字幕链接", lrcUrl: "歌词链接", bilingual: "是否双语", otherLrcUrl: "另一语言歌词链接", description: "说明",
         cancel: "取消", create: "创建", empty: "暂无伪挂载", item: "项", items: "项",
         wrongPassword: "密码错误。", signingIn: "正在登录...", loadFailed: "无法读取伪挂载。",
         createFailed: "无法创建伪挂载。", created: "伪挂载已创建。", delete: "删除", deleteConfirm: "删除此伪挂载？",
@@ -248,8 +255,8 @@ const loggedIn = await isAdmin(Astro.request, env);
         pageCopy: "公開メディアリンク、字幕、歌詞を管理します。", addFile: "ファイルを追加", refresh: "更新",
         name: "名前", path: "パス", type: "種類", subtitle: "字幕 / 歌詞", source: "元リンク", actions: "操作",
         loading: "読み込み中...", addMount: "疑似マウントを追加", close: "閉じる", folder: "フォルダー",
-        video: "動画", audio: "音声", image: "画像", posterUrl: "ポスターURL", mediaUrl: "メディアURL",
-        assUrl: "ASS字幕URL", lrcUrl: "歌詞URL", bilingual: "二言語歌詞", otherLrcUrl: "別言語の歌詞URL",
+        video: "動画", audio: "音声", image: "画像", file: "ファイル", posterUrl: "ポスターURL", mediaUrl: "メディアURL", url: "リンク",
+        assUrl: "ASS字幕URL", lrcUrl: "歌詞URL", bilingual: "二言語歌詞", otherLrcUrl: "別言語の歌詞URL", description: "説明",
         cancel: "キャンセル", create: "作成", empty: "疑似マウントはありません", item: "件",
         items: "件", wrongPassword: "パスワードが正しくありません。", signingIn: "ログイン中...",
         loadFailed: "疑似マウントを読み込めませんでした。", createFailed: "疑似マウントを作成できませんでした。",
@@ -259,7 +266,7 @@ const loggedIn = await isAdmin(Astro.request, env);
     } as const;
 
     type Lang = keyof typeof c;
-    type Item = { id: string; name: string; path: string; url: string; kind: "video" | "audio" | "image"; poster?: string; sub?: string; lrc?: string; lrc2?: string };
+    type Item = { id: string; name: string; path: string; url: string; kind: "video" | "audio" | "image" | "file"; description?: string; poster?: string; sub?: string; lrc?: string; lrc2?: string };
     type VisitorTheme = "blue" | "retro" | "future" | "tech" | "gray";
     let lang: Lang = "en";
     let items: Item[] = [];
@@ -317,7 +324,7 @@ const loggedIn = await isAdmin(Astro.request, env);
     }
 
     function typeIcon(kind: Item["kind"]) {
-      const id = kind === "audio" ? "tableAudio" : kind === "image" ? "tableImage" : "tableVideo";
+      const id = kind === "audio" ? "tableAudio" : kind === "image" ? "tableImage" : kind === "file" ? "tableFile" : "tableVideo";
       return document.querySelector<HTMLTemplateElement>(`#${id}`)?.innerHTML || "";
     }
 
@@ -386,7 +393,7 @@ const loggedIn = await isAdmin(Astro.request, env);
           <td><span class="table-file">${typeIcon(item.kind)}<span>${esc(item.name)}</span></span></td>
           <td><span class="url-cell path-cell" title="${esc(displayPath(item.path))}">${esc(displayPath(item.path))}</span></td>
           <td><span class="type-chip">${esc(t(item.kind))}</span></td>
-          <td>${item.sub ? '<span class="type-chip">ASS</span>' : item.lrc ? `<span class="type-chip">LRC${item.lrc2 ? " x2" : ""}</span>` : '<span class="url-cell">-</span>'}</td>
+          <td>${item.kind === "file" ? '<span class="url-cell">-</span>' : item.sub ? '<span class="type-chip">ASS</span>' : item.lrc ? `<span class="type-chip">LRC${item.lrc2 ? " x2" : ""}</span>` : '<span class="url-cell">-</span>'}</td>
           <td><a class="url-cell source-cell" href="${esc(item.url)}" title="${esc(item.url)}" target="_blank" rel="noreferrer">${esc(item.url)}</a></td>
           <td><span class="row-actions"><button class="icon-button danger-button" type="button" data-delete="${esc(item.id)}" title="${esc(t("delete"))}">${trash}<span class="sr-only">${esc(t("delete"))}</span></button></span></td>
         </tr>
@@ -453,20 +460,30 @@ const loggedIn = await isAdmin(Astro.request, env);
     const dialog = document.querySelector<HTMLDialogElement>("#mountDialog");
     const form = document.querySelector<HTMLFormElement>("#linkForm");
     const kind = document.querySelector("#kindSelect") as HTMLSelectElement | null;
+    const urlLabel = document.querySelector<HTMLElement>("#urlLabel");
+    const posterField = document.querySelector<HTMLElement>("#posterField");
     const subField = document.querySelector<HTMLElement>("#subField");
     const lrcFields = document.querySelector<HTMLElement>("#lrcFields");
+    const descriptionField = document.querySelector<HTMLElement>("#descriptionField");
     const bilingual = document.querySelector<HTMLInputElement>("#bilingualToggle");
     const lrc2Field = document.querySelector<HTMLElement>("#lrc2Field");
     const folderInput = form?.querySelector<HTMLInputElement>('[name="folder"]');
     const toggleFields = () => {
-      if (!kind || !subField || !lrcFields || !bilingual || !lrc2Field) return;
+      if (!kind || !urlLabel || !posterField || !subField || !lrcFields || !descriptionField || !bilingual || !lrc2Field) return;
+      const file = kind.value === "file";
+      urlLabel.dataset.i18n = file ? "url" : "mediaUrl";
+      urlLabel.textContent = file ? t("url") : t("mediaUrl");
+      posterField.hidden = file;
       subField.hidden = kind.value !== "video";
       lrcFields.hidden = kind.value !== "audio";
+      descriptionField.hidden = !file;
+      if (file) posterField.querySelector<HTMLInputElement>("input")!.value = "";
       if (kind.value !== "video") subField.querySelector<HTMLInputElement>("input")!.value = "";
       if (kind.value !== "audio") {
         lrcFields.querySelectorAll<HTMLInputElement>('input[type="url"]').forEach((input) => (input.value = ""));
         bilingual.checked = false;
       }
+      if (!file) descriptionField.querySelector<HTMLTextAreaElement>("textarea")!.value = "";
       lrc2Field.hidden = kind.value !== "audio" || !bilingual.checked;
       if (!bilingual.checked) lrc2Field.querySelector<HTMLInputElement>("input")!.value = "";
     };
