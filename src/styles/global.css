@@ -861,6 +861,39 @@ textarea:focus-visible {
   opacity: 0.82;
 }
 
+.lyric-word {
+  color: #a9bac4;
+  transition: color 120ms linear;
+}
+
+.lyric-line.is-active .lyric-word {
+  color: #a9bac4;
+}
+
+.lyric-line.is-active .lyric-word.is-played {
+  color: inherit;
+}
+
+@supports (color: color-mix(in srgb, black, white)) {
+  .lyric-line {
+    --lyric-played: #8da3b2;
+    --lyric-unplayed: color-mix(in srgb, var(--lyric-played) 35%, white);
+  }
+
+  .lyric-line.is-active {
+    --lyric-played: #284b63;
+    --lyric-unplayed: color-mix(in srgb, var(--lyric-played) 35%, white);
+  }
+
+  .lyric-line.is-active .lyric-word {
+    color: color-mix(
+      in srgb,
+      var(--lyric-played) var(--lyric-word-progress, 0%),
+      var(--lyric-unplayed)
+    );
+  }
+}
+
 .lyrics-state {
   display: grid;
   height: 100%;

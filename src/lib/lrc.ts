@@ -1,22 +1,50 @@
 export interface LrcLine {
   at: number;
   text: string;
+  words?: LyricWord[];
+}
+
+export interface LyricWord {
+  at: number;
+  duration: number;
+  text: string;
 }
 
 export interface LyricCue {
   at: number;
   top: string;
   bottom?: string;
+  words?: LyricWord[];
+  bottomWords?: LyricWord[];
 }
 
 const stamp = /\[(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
 const enhancedStamp = /^\s*\[([+-]?\d+),([+-]?\d+)\](.*)$/;
-const enhancedWordStamp = /\([+-]?\d+,[+-]?\d+(?:,[+-]?\d+)?\)/g;
+const enhancedWordStamp = /\(([+-]?\d+),([+-]?\d+)(?:,[+-]?\d+)?\)/g;
 const han = /[\u3400-\u9fff\uf900-\ufaff]/g;
 const kana = /[\u3040-\u30ff]/g;
 
 function cleanText(input: string) {
   return input.replace(enhancedWordStamp, "").trim();
+}
+
+function parseEnhancedWords(input: string, offset: number) {
+  const matches = [...input.matchAll(enhancedWordStamp)];
+  if (!matches.length) return undefined;
+
+  const words: LyricWord[] = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    const start = Number(match[1]) / 1000 + offset;
+    const duration = Number(match[2]) / 1000;
+    const from = (match.index || 0) + match[0].length;
+    const to = matches[index + 1]?.index ?? input.length;
+    const text = input.slice(from, to);
+    if (!text || !Number.isFinite(start) || !Number.isFinite(duration)) continue;
+    words.push({ at: Math.max(0, start), duration: Math.max(0, duration), text });
+  }
+
+  return words.length ? words : undefined;
 }
 
 function jsonText(input: string) {
@@ -49,7 +77,8 @@ export function parseLrc(source: string): LrcLine[] {
     if (enhanced) {
       const at = Number(enhanced[1]) / 1000;
       const text = cleanText(enhanced[3]);
-      if (Number.isFinite(at) && text) result.push({ at: Math.max(0, at + offset), text });
+      const words = parseEnhancedWords(enhanced[3], offset);
+      if (Number.isFinite(at) && text) result.push({ at: Math.max(0, at + offset), text, words });
       continue;
     }
 
@@ -78,19 +107,21 @@ function chineseScore(lines: LrcLine[]) {
 }
 
 function groupSingle(lines: LrcLine[]): LyricCue[] {
-  const groups = new Map<number, string[]>();
+  const groups = new Map<number, LrcLine[]>();
   for (const line of lines) {
     const key = Math.round(line.at * 1000) / 1000;
-    const texts = groups.get(key) || [];
-    if (!texts.includes(line.text)) texts.push(line.text);
-    groups.set(key, texts);
+    const grouped = groups.get(key) || [];
+    if (!grouped.some((entry) => entry.text === line.text)) grouped.push(line);
+    groups.set(key, grouped);
   }
 
-  return [...groups.entries()].map(([at, texts]) => {
-    if (texts.length < 2) return { at, top: texts[0] };
-    const chinese = texts.findIndex((text) => (text.match(han)?.length || 0) > 0 && (text.match(kana)?.length || 0) === 0);
+  return [...groups.entries()].map(([at, linesAtTime]) => {
+    if (linesAtTime.length < 2) return { at, top: linesAtTime[0].text, words: linesAtTime[0].words };
+    const chinese = linesAtTime.findIndex((line) => (line.text.match(han)?.length || 0) > 0 && (line.text.match(kana)?.length || 0) === 0);
     const topIndex = chinese >= 0 ? chinese : 0;
-    return { at, top: texts[topIndex], bottom: texts.find((_, index) => index !== topIndex) };
+    const top = linesAtTime[topIndex];
+    const bottom = linesAtTime.find((_, index) => index !== topIndex);
+    return { at, top: top.text, words: top.words, bottom: bottom?.text, bottomWords: bottom?.words };
   });
 }
 
@@ -110,11 +141,18 @@ function combine(top: LrcLine[], bottom: LrcLine[]): LyricCue[] {
       if (bottom[candidate].at > line.at + distance) break;
     }
     if (nearest >= 0) used.add(nearest);
-    return { at: line.at, top: line.text, bottom: nearest >= 0 ? bottom[nearest].text : undefined, _index: index };
+    return {
+      at: line.at,
+      top: line.text,
+      words: line.words,
+      bottom: nearest >= 0 ? bottom[nearest].text : undefined,
+      bottomWords: nearest >= 0 ? bottom[nearest].words : undefined,
+      _index: index
+    };
   });
 
   for (let index = 0; index < bottom.length; index += 1) {
-    if (!used.has(index)) cues.push({ at: bottom[index].at, top: "", bottom: bottom[index].text, _index: index });
+    if (!used.has(index)) cues.push({ at: bottom[index].at, top: "", bottom: bottom[index].text, bottomWords: bottom[index].words, _index: index });
   }
 
   return cues

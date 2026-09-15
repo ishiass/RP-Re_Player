@@ -365,7 +365,8 @@ const introMaxSeconds = (() => {
 
   <script>
     import JASSUB from "jassub";
-    import { buildLyrics, type LyricCue } from "../lib/lrc";
+    import { buildLyrics, type LyricCue, type LyricWord } from "../lib/lrc";
+    import { publicCoverPath } from "../lib/pseudo";
     import { parentPseudoPath, pseudoPathFromVisitorUrl, visitorUrl } from "../lib/visitor-route";
 
     const c = {
@@ -659,6 +660,7 @@ const introMaxSeconds = (() => {
     let videoHoldY = 0;
     let seeking = false;
     let audioSeeking = false;
+    let lyricFrame = 0;
     let statSession = 0;
     let statPlayed = false;
     let progressStamp = 0;
@@ -1216,6 +1218,55 @@ const introMaxSeconds = (() => {
       }, 3000);
     }
 
+    function renderLyricText(text: string, words?: LyricWord[]) {
+      if (!words?.length) return esc(text);
+      let cursor = 0;
+      const chunks: string[] = [];
+      for (const word of words) {
+        const position = text.indexOf(word.text, cursor);
+        if (position < cursor) return esc(text);
+        chunks.push(esc(text.slice(cursor, position)));
+        chunks.push(`<span class="lyric-word" data-word-at="${esc(word.at)}" data-word-end="${esc(word.at + word.duration)}">${esc(word.text)}</span>`);
+        cursor = position + word.text.length;
+      }
+      chunks.push(esc(text.slice(cursor)));
+      return chunks.join("");
+    }
+
+    function syncLyricWords(now: number) {
+      const line = d.lyricsList.querySelector<HTMLElement>(`[data-lyric="${s.lyricIndex}"]`);
+      if (!line) return;
+      line.querySelectorAll<HTMLElement>(".lyric-word").forEach((word) => {
+        const at = Number(word.dataset.wordAt);
+        const end = Number(word.dataset.wordEnd);
+        if (!Number.isFinite(at) || !Number.isFinite(end)) return;
+        const progress = end > at
+          ? Math.max(0, Math.min(1, (now - at) / (end - at)))
+          : now >= at ? 1 : 0;
+        word.style.setProperty("--lyric-word-progress", `${progress * 100}%`);
+        word.classList.toggle("is-current", progress > 0 && progress < 1);
+        word.classList.toggle("is-played", progress >= 1);
+      });
+    }
+
+    function runLyricFrame() {
+      lyricFrame = 0;
+      if (d.audio.paused || !s.lyrics.length) return;
+      syncLyrics();
+      startLyricFrame();
+    }
+
+    function startLyricFrame() {
+      if (lyricFrame || d.audio.paused || !d.lyricsList.querySelector(".lyric-word")) return;
+      lyricFrame = requestAnimationFrame(runLyricFrame);
+    }
+
+    function stopLyricFrame() {
+      if (!lyricFrame) return;
+      cancelAnimationFrame(lyricFrame);
+      lyricFrame = 0;
+    }
+
     function syncLyrics(force = false) {
       if (!s.lyrics.length) return;
       const now = d.audio.currentTime + 0.05;
@@ -1232,7 +1283,10 @@ const introMaxSeconds = (() => {
         }
       }
       d.lyricsList.classList.toggle("is-intro", index < Math.min(3, s.lyrics.length));
-      if (!force && index === s.lyricIndex) return;
+      if (!force && index === s.lyricIndex) {
+        syncLyricWords(now);
+        return;
+      }
 
       const previous = d.lyricsList.querySelector<HTMLElement>(".is-active");
       previous?.classList.remove("is-active");
@@ -1247,6 +1301,7 @@ const introMaxSeconds = (() => {
       if (!line) return;
       line.classList.add("is-active");
       line.setAttribute("aria-current", "true");
+      syncLyricWords(now);
       if (force || !s.lyricManual) centerLyric(line, force ? "auto" : "smooth");
     }
 
@@ -1261,12 +1316,13 @@ const introMaxSeconds = (() => {
         const bottom = cue.top ? cue.bottom : undefined;
         return `
           <button class="lyric-line" type="button" data-lyric="${index}" data-at="${cue.at}">
-            <span class="lyric-top">${esc(top)}</span>
-            ${bottom ? `<span class="lyric-bottom">${esc(bottom)}</span>` : ""}
+            <span class="lyric-top">${renderLyricText(top, cue.top ? cue.words : cue.bottomWords)}</span>
+            ${bottom ? `<span class="lyric-bottom">${renderLyricText(bottom, cue.top ? cue.bottomWords : undefined)}</span>` : ""}
           </button>
         `;
       }).join("");
       syncLyrics(true);
+      startLyricFrame();
     }
 
     async function loadLyrics(item: MediaItem) {
@@ -1425,6 +1481,7 @@ const introMaxSeconds = (() => {
       d.audio.pause();
       d.video.removeAttribute("src");
       d.audio.removeAttribute("src");
+      stopLyricFrame();
       d.image.removeAttribute("src");
       d.fileDownload.href = "#";
       d.fileDescription.innerHTML = "";
@@ -1504,7 +1561,9 @@ const introMaxSeconds = (() => {
       } else if (item.kind === "audio") {
         d.stage.dataset.mode = "audio";
         d.audioFrame.hidden = false;
-        d.audioPoster.src = item.poster || "/poster.svg";
+        d.audioPoster.dataset.posterStage = item.poster ? "custom" : "embedded";
+        d.audioPoster.dataset.coverUrl = publicCoverPath(item.path);
+        d.audioPoster.src = item.poster || d.audioPoster.dataset.coverUrl;
         d.audioPoster.alt = item.name;
         d.audioTitle.textContent = item.name;
         d.audioPath.textContent = item.artist || displayPath(item.path);
@@ -1614,9 +1673,13 @@ const introMaxSeconds = (() => {
     d.audio.addEventListener("play", () => {
       delete d.stage.dataset.signal;
       recordPlay();
+      startLyricFrame();
     });
     d.audio.addEventListener("loadedmetadata", () => restoreProgress(d.audio));
-    d.audio.addEventListener("pause", () => saveProgress(true));
+    d.audio.addEventListener("pause", () => {
+      stopLyricFrame();
+      saveProgress(true);
+    });
     ["waiting", "stalled"].forEach((event) => {
       d.audio.addEventListener(event, () => {
         d.stage.dataset.signal = "unstable";
@@ -1669,7 +1732,13 @@ const introMaxSeconds = (() => {
       d.audio.volume = Number(d.audioVolume.value);
     });
     d.audioPoster.addEventListener("error", () => {
-      if (!d.audioPoster.src.endsWith("/poster.svg")) d.audioPoster.src = "/poster.svg";
+      if (d.audioPoster.dataset.posterStage === "custom") {
+        d.audioPoster.dataset.posterStage = "embedded";
+        d.audioPoster.src = d.audioPoster.dataset.coverUrl || "/poster.svg";
+      } else if (d.audioPoster.dataset.posterStage === "embedded") {
+        d.audioPoster.dataset.posterStage = "default";
+        d.audioPoster.src = "/poster.svg";
+      }
     });
     d.lyricsList.addEventListener("wheel", pauseLyricFollow, { passive: true });
     d.lyricsList.addEventListener("touchstart", pauseLyricFollow, { passive: true });

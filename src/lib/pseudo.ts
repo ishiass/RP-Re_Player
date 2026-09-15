@@ -87,6 +87,10 @@ export function publicDownloadPath(path: string) {
   return publicAssetPath("/api/public/download", path);
 }
 
+export function publicCoverPath(path: string) {
+  return publicAssetPath("/api/public/cover", path);
+}
+
 function publicAssetPath(prefix: string, path: string) {
   const relative = normalizeRootPath(path).slice("/root".length);
   const encoded = relative
