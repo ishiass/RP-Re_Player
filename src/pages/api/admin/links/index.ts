@@ -22,6 +22,7 @@ export const POST: APIRoute = async (context) => {
       name: body.name,
       url: body.url,
       kind: body.kind,
+      description: body.description,
       poster: body.poster,
       sub: body.sub,
       lrc: body.lrc,
