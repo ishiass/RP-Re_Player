@@ -19,7 +19,10 @@ Re Player is a link-based media library that uses the Astro framework and runs o
 
 ## Local Run
 
-Run `一键启动.cmd` to build RP and open HTTP port `80` plus HTTPS port `443`. With the default `IP=127.0.0.1`, it displays `soers.de5.net`. For the configured loopback records, `127.0.0.N` maps to `2N.soers.de5.net` and `172.0.0.N` maps to `7N.soers.de5.net` for `N=0-9`; `127.0.0.1` is the root-domain exception. Other addresses are displayed directly. Wrangler's local HTTPS certificate may require browser trust confirmation.
+> [!NOTE]
+> Local running through Local.cmd in the main repository is incomplete and can only be accessed from the same computer. To access the service from other devices on your LAN, download the release package and read the README included with it, or download and run the code from this repository's local branch.
+
+Run `Local.cmd` to build RP and open HTTP port `80` plus HTTPS port `443`. With the default `IP=127.0.0.1`, it displays `soers.de5.net`. For the configured loopback records, `127.0.0.N` maps to `2N.soers.de5.net` and `172.0.0.N` maps to `7N.soers.de5.net` for `N=0-9`; `127.0.0.1` is the root-domain exception. Other addresses are displayed directly. Wrangler's local HTTPS certificate may require browser trust confirmation.
 
 The equivalent command is:
 
@@ -90,5 +93,5 @@ When no manual language preference has been saved, RP uses the free, keyless `ap
 ```bash
 You don't need to change Cloudflared's build command.
 
-If you want to run it locally,please run 一键启动.cmd
+If you want to run it locally,please run Local.cmd
 ```
