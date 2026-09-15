@@ -1,6 +1,6 @@
 import type { AppEnv } from "./cloudflare";
 
-export type PseudoKind = "video" | "audio" | "image";
+export type PseudoKind = "video" | "audio" | "image" | "file";
 
 export interface PseudoItem {
   id: string;
@@ -8,6 +8,7 @@ export interface PseudoItem {
   path: string;
   url: string;
   kind: PseudoKind;
+  description?: string;
   artist?: string;
   poster?: string;
   sub?: string;
@@ -79,13 +80,21 @@ function assertRoutableFolder(folder: string) {
 }
 
 export function publicMediaPath(path: string) {
+  return publicAssetPath("/api/public/media", path);
+}
+
+export function publicDownloadPath(path: string) {
+  return publicAssetPath("/api/public/download", path);
+}
+
+function publicAssetPath(prefix: string, path: string) {
   const relative = normalizeRootPath(path).slice("/root".length);
   const encoded = relative
     .split("/")
     .filter(Boolean)
     .map((part) => encodeURIComponent(part))
     .join("/");
-  return encoded ? `/api/public/media/${encoded}` : "/api/public/media";
+  return encoded ? `${prefix}/${encoded}` : prefix;
 }
 
 function webUrl(input: string, label: string) {
@@ -126,6 +135,7 @@ async function ensureDb(env: AppEnv) {
         path TEXT NOT NULL UNIQUE,
         url TEXT NOT NULL,
         kind TEXT NOT NULL,
+        description TEXT,
         poster TEXT,
         sub TEXT,
         lrc TEXT,
@@ -146,6 +156,9 @@ async function ensureDb(env: AppEnv) {
   if (!(info.results ?? []).some((column) => column.name === "lrc2")) {
     await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc2 TEXT").run();
   }
+  if (!(info.results ?? []).some((column) => column.name === "description")) {
+    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN description TEXT").run();
+  }
   return true;
 }
 
@@ -156,6 +169,7 @@ function mapRow(row: any): PseudoItem {
     path: row.path,
     url: row.url,
     kind: row.kind,
+    description: row.description || undefined,
     poster: row.poster || undefined,
     sub: row.sub || undefined,
     lrc: row.lrc || undefined,
@@ -168,7 +182,7 @@ function mapRow(row: any): PseudoItem {
 export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
   if (await ensureDb(env)) {
     const result = await env.DB!.prepare(
-      "SELECT id, name, path, url, kind, poster, sub, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
+      "SELECT id, name, path, url, kind, description, poster, sub, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
     ).all<any>();
     return (result.results ?? []).map(mapRow);
   }
@@ -263,7 +277,7 @@ export async function getItem(env: AppEnv, path: string) {
   const normalized = normalizeRootPath(path);
   if (await ensureDb(env)) {
     const row = await env.DB!.prepare(
-      "SELECT id, name, path, url, kind, poster, sub, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
+      "SELECT id, name, path, url, kind, description, poster, sub, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
     )
       .bind(normalized)
       .first<any>();
@@ -279,6 +293,7 @@ export async function createItem(
     name: string;
     url: string;
     kind: PseudoKind;
+    description?: string;
     poster?: string;
     sub?: string;
     lrc?: string;
@@ -297,8 +312,9 @@ export async function createItem(
     name,
     path,
     url: webUrl(input.url, "Media URL") || "",
-    kind: input.kind === "image" || input.kind === "audio" ? input.kind : "video",
-    poster: webUrl(input.poster || "", "Poster URL"),
+    kind: input.kind === "file" || input.kind === "image" || input.kind === "audio" ? input.kind : "video",
+    description: input.kind === "file" ? String(input.description || "").trim() : undefined,
+    poster: input.kind === "file" ? undefined : webUrl(input.poster || "", "Poster URL"),
     sub: input.kind === "video" ? webUrl(input.sub || "", "Subtitle URL") : undefined,
     lrc: input.kind === "audio" ? webUrl(input.lrc || "", "Lyrics URL") : undefined,
     lrc2: input.kind === "audio" ? webUrl(input.lrc2 || "", "Other lyrics URL") : undefined,
@@ -319,8 +335,8 @@ export async function createItem(
   if (await ensureDb(env)) {
     const result = await env.DB!.prepare(
       `
-        INSERT INTO rp_pseudo_links (id, name, path, url, kind, poster, sub, lrc, lrc2, created_at, updated_at)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        INSERT INTO rp_pseudo_links (id, name, path, url, kind, description, poster, sub, lrc, lrc2, created_at, updated_at)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE NOT EXISTS (
           SELECT 1
           FROM rp_pseudo_links
@@ -334,6 +350,7 @@ export async function createItem(
           name = excluded.name,
           url = excluded.url,
           kind = excluded.kind,
+          description = excluded.description,
           poster = excluded.poster,
           sub = excluded.sub,
           lrc = excluded.lrc,
@@ -347,6 +364,7 @@ export async function createItem(
         item.path,
         item.url,
         item.kind,
+        item.description ?? null,
         item.poster ?? null,
         item.sub ?? null,
         item.lrc ?? null,

@@ -10,16 +10,51 @@ export interface LyricCue {
 }
 
 const stamp = /\[(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
+const enhancedStamp = /^\s*\[([+-]?\d+),([+-]?\d+)\](.*)$/;
+const enhancedWordStamp = /\([+-]?\d+,[+-]?\d+(?:,[+-]?\d+)?\)/g;
 const han = /[\u3400-\u9fff\uf900-\ufaff]/g;
 const kana = /[\u3040-\u30ff]/g;
+
+function cleanText(input: string) {
+  return input.replace(enhancedWordStamp, "").trim();
+}
+
+function jsonText(input: string) {
+  try {
+    const data = JSON.parse(input) as { t?: unknown; c?: unknown };
+    if (!Number.isFinite(data.t as number) || !Array.isArray(data.c)) return null;
+    const text = data.c
+      .map((part) => typeof part === "object" && part ? String((part as { tx?: unknown }).tx ?? "") : "")
+      .join("")
+      .trim();
+    if (!text) return null;
+    return { at: Number(data.t) / 1000, text };
+  } catch {
+    return null;
+  }
+}
 
 export function parseLrc(source: string): LrcLine[] {
   const offset = Number(source.match(/^\s*\[offset:([+-]?\d+)\]\s*$/im)?.[1] || 0) / 1000;
   const result: LrcLine[] = [];
 
   for (const raw of source.replace(/^\ufeff/, "").split(/\r?\n/)) {
+    const metadata = jsonText(raw.trim());
+    if (metadata) {
+      result.push({ at: Math.max(0, metadata.at + offset), text: metadata.text });
+      continue;
+    }
+
+    const enhanced = raw.match(enhancedStamp);
+    if (enhanced) {
+      const at = Number(enhanced[1]) / 1000;
+      const text = cleanText(enhanced[3]);
+      if (Number.isFinite(at) && text) result.push({ at: Math.max(0, at + offset), text });
+      continue;
+    }
+
     const matches = [...raw.matchAll(stamp)];
-    const text = raw.replace(stamp, "").trim();
+    const text = cleanText(raw.replace(stamp, ""));
     if (!matches.length || !text) continue;
 
     for (const match of matches) {

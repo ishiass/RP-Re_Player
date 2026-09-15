@@ -1,10 +1,11 @@
 import type { APIContext } from "astro";
 import { getEnv } from "./cloudflare";
-import { getItem, normalizeRootPath, publicMediaPath } from "./pseudo";
+import { getItem, normalizeRootPath, publicDownloadPath, publicMediaPath, type PseudoKind } from "./pseudo";
 
 const forwardedHeaders = ["range", "if-range", "if-none-match", "if-modified-since"];
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const mediaPrefix = "/api/public/media";
+const downloadPrefix = "/api/public/download";
 const maxProxyDepth = 5;
 const maxRedirects = 5;
 
@@ -27,7 +28,14 @@ function mediaType(name: string) {
     png: "image/png",
     gif: "image/gif",
     webp: "image/webp",
-    avif: "image/avif"
+    avif: "image/avif",
+    pdf: "application/pdf",
+    txt: "text/plain; charset=utf-8",
+    md: "text/markdown; charset=utf-8",
+    json: "application/json",
+    zip: "application/zip",
+    "7z": "application/x-7z-compressed",
+    rar: "application/vnd.rar"
   };
   return extension ? types[extension] : undefined;
 }
@@ -61,7 +69,12 @@ function contentDispositionName(name: string) {
   }
 }
 
-export async function serveMedia(context: APIContext, path: string | null, method: "GET" | "HEAD") {
+export async function serveMedia(
+  context: APIContext,
+  path: string | null,
+  method: "GET" | "HEAD",
+  options: { disposition?: "inline" | "attachment"; kind?: PseudoKind } = {}
+) {
   if (!path || path === "/root") return new Response("Not found.", { status: 404 });
 
   const proxyDepth = Number(context.request.headers.get("x-rp-media-depth") || "0");
@@ -71,6 +84,8 @@ export async function serveMedia(context: APIContext, path: string | null, metho
 
   const item = await getItem(await getEnv(context), path);
   if (!item) return new Response("Not found.", { status: 404 });
+  if (options.kind && item.kind !== options.kind) return new Response("Not found.", { status: 404 });
+  if (!options.kind && item.kind === "file") return new Response("Not found.", { status: 404 });
 
   let source: URL;
   try {
@@ -90,11 +105,15 @@ export async function serveMedia(context: APIContext, path: string | null, metho
   let currentSource = source;
   for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
     const selfPath = publicMediaPath(item.path);
+    const selfDownloadPath = publicDownloadPath(item.path);
     const isInternalProxy = currentSource.origin === context.url.origin &&
       (currentSource.pathname === context.url.pathname ||
         currentSource.pathname === selfPath ||
+        currentSource.pathname === selfDownloadPath ||
         currentSource.pathname === mediaPrefix ||
-        currentSource.pathname.startsWith(`${mediaPrefix}/`));
+        currentSource.pathname.startsWith(`${mediaPrefix}/`) ||
+        currentSource.pathname === downloadPrefix ||
+        currentSource.pathname.startsWith(`${downloadPrefix}/`));
     if ((currentSource.protocol !== "http:" && currentSource.protocol !== "https:") || isInternalProxy) {
       return new Response("Invalid media source.", { status: 502 });
     }
@@ -124,7 +143,7 @@ export async function serveMedia(context: APIContext, path: string | null, metho
     const inferredType = mediaType(item.name);
     if (inferredType) headers.set("content-type", inferredType);
   }
-  headers.set("content-disposition", `inline; filename*=UTF-8''${contentDispositionName(item.name)}`);
+  headers.set("content-disposition", `${options.disposition || "inline"}; filename*=UTF-8''${contentDispositionName(item.name)}`);
 
   return new Response(method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
