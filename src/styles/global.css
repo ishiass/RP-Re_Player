@@ -3731,6 +3731,7 @@ body:has(.login-screen)::before {
   display: block;
   width: 100%;
   height: 100%;
+  transform: translateY(-2vh);
   object-fit: contain;
   object-position: center;
   background: #000000;
