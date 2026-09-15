@@ -392,6 +392,7 @@ const introMaxSeconds = (() => {
         loadFailed: "Could not load this folder.",
         itemFailed: "Could not open this media.",
         subFailed: "The ASS subtitle could not be loaded.",
+        playFailed: "The video could not be started.",
         playing: "Now playing",
         buffering: "Buffering...",
         playCount: "Play count",
@@ -438,6 +439,7 @@ const introMaxSeconds = (() => {
         loadFailed: "无法读取此目录。",
         itemFailed: "无法打开此媒体。",
         subFailed: "ASS 字幕加载失败。",
+        playFailed: "视频无法开始播放。",
         playing: "正在播放",
         buffering: "正在缓冲...",
         playCount: "播放次数",
@@ -484,6 +486,7 @@ const introMaxSeconds = (() => {
         loadFailed: "フォルダーを読み込めませんでした。",
         itemFailed: "メディアを開けませんでした。",
         subFailed: "ASS字幕を読み込めませんでした。",
+        playFailed: "動画を再生できませんでした。",
         playing: "再生中",
         buffering: "バッファリング中...",
         playCount: "再生回数",
@@ -661,6 +664,8 @@ const introMaxSeconds = (() => {
     let seeking = false;
     let audioSeeking = false;
     let lyricFrame = 0;
+    let itemAbortController: AbortController | null = null;
+    let subtitleAbortController: AbortController | null = null;
     let statSession = 0;
     let statPlayed = false;
     let progressStamp = 0;
@@ -812,7 +817,7 @@ const introMaxSeconds = (() => {
       if (mode === "replace") history.replaceState(state, "", next);
       else history.pushState(state, "", next);
     }
-    const subtitleFontUrls = async (content: string) => {
+    const subtitleFontUrls = async (content: string, externalSignal?: AbortSignal) => {
       const characters = [...new Set([...content].filter((character) => {
         const point = character.codePointAt(0) || 0;
         return point >= 0x20 && point !== 0x7f;
@@ -823,6 +828,8 @@ const introMaxSeconds = (() => {
       );
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), 6000);
+      const abortGoogleFonts = () => controller.abort();
+      externalSignal?.addEventListener("abort", abortGoogleFonts, { once: true });
       try {
         const urls = await Promise.all(chunks.map(async (text) => {
           const url = new URL("https://fonts.googleapis.com/css2");
@@ -842,6 +849,7 @@ const introMaxSeconds = (() => {
         }));
         return { fonts, defaultFont: "Noto Sans SC" };
       } catch {
+        if (externalSignal?.aborted) throw new DOMException("Subtitle font loading was aborted.", "AbortError");
         const kana = [...content].filter((character) => {
           const point = character.codePointAt(0) || 0;
           return point >= 0x3040 && point <= 0x30ff;
@@ -852,13 +860,14 @@ const introMaxSeconds = (() => {
         }).length;
         const japanese = kana * 3 > han;
         const url = japanese ? "/fonts/NotoSansJP-Regular.woff2" : "/fonts/NotoSansSC-Regular.woff2";
-        const response = await fetch(url);
+        const response = await fetch(url, externalSignal ? { signal: externalSignal } : undefined);
         return {
           fonts: response.ok ? [new Uint8Array(await response.arrayBuffer())] : [],
           defaultFont: japanese ? "Noto Sans JP" : "Noto Sans SC"
         };
       } finally {
         window.clearTimeout(timer);
+        externalSignal?.removeEventListener("abort", abortGoogleFonts);
       }
     };
     const normalizeAssFonts = (content: string, font: string) => {
@@ -1430,6 +1439,8 @@ const introMaxSeconds = (() => {
       if (navigation !== "none") {
         routeRequest += 1;
         itemRequest += 1;
+        itemAbortController?.abort();
+        subtitleAbortController?.abort();
         cancelItemLoadingFeedback();
       }
       const route = routeRequest;
@@ -1473,6 +1484,8 @@ const introMaxSeconds = (() => {
 
     async function clearMedia() {
       saveProgress(true);
+      subtitleAbortController?.abort();
+      subtitleAbortController = null;
       if (s.ass) {
         await s.ass.destroy().catch(() => undefined);
         s.ass = null;
@@ -1480,12 +1493,15 @@ const introMaxSeconds = (() => {
       d.video.pause();
       d.audio.pause();
       d.video.removeAttribute("src");
+      d.video.load();
       d.audio.removeAttribute("src");
+      d.audio.load();
       stopLyricFrame();
       d.image.removeAttribute("src");
       d.fileDownload.href = "#";
       d.fileDescription.innerHTML = "";
       d.videoFrame.hidden = true;
+      delete d.videoFrame.dataset.subtitleReady;
       d.videoFrame.classList.remove("controls-hidden");
       window.clearTimeout(controlTimer);
       d.imageFrame.hidden = true;
@@ -1501,11 +1517,12 @@ const introMaxSeconds = (() => {
       d.empty.hidden = true;
     }
 
-    async function requestItem(path: string, allowMissing = false): Promise<ItemPayload | null> {
+    async function requestItem(path: string, allowMissing = false, signal?: AbortSignal): Promise<ItemPayload | null> {
       const response = await fetch("/api/public/item", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path })
+        body: JSON.stringify({ path }),
+        signal
       });
       const data = (await response.json()) as ItemPayload & { ok?: boolean; error?: string; details?: string };
       if (allowMissing && response.status === 404) return null;
@@ -1513,28 +1530,80 @@ const introMaxSeconds = (() => {
       return data;
     }
 
+    function isCurrentItemLoad(request: number, route: number, signal: AbortSignal) {
+      return request === itemRequest && route === routeRequest && !signal.aborted;
+    }
+
+    async function loadVideoSubtitle(item: MediaItem, request: number, route: number, signal: AbortSignal) {
+      if (!item.sub) return;
+      const subUrl = `/api/public/sub?path=${encodeURIComponent(item.path)}`;
+      const response = await fetch(subUrl, { signal });
+      if (!response.ok) throw new Error("Subtitle request failed.");
+      const rawSubtitle = await response.text();
+      if (!isCurrentItemLoad(request, route, signal)) return;
+
+      const subContent = normalizeAssFonts(rawSubtitle, "Noto Sans SC");
+      let ass: JASSUB | null = null;
+      try {
+        ass = new JASSUB({
+          video: d.video,
+          subContent
+        });
+        if (!isCurrentItemLoad(request, route, signal)) {
+          if (s.ass === ass) s.ass = null;
+          await ass.destroy().catch(() => undefined);
+          return;
+        }
+        s.ass = ass;
+        d.videoFrame.dataset.subtitleReady = "0";
+        const fontPromise = subtitleFontUrls(rawSubtitle, signal);
+        const [, font] = await Promise.all([ass.ready, fontPromise]);
+        if (!isCurrentItemLoad(request, route, signal) || s.ass !== ass) {
+          if (s.ass === ass) s.ass = null;
+          await ass.destroy().catch(() => undefined);
+          return;
+        }
+        await ass.renderer.addFonts(font.fonts);
+        ass.renderer.setDefaultFont(font.defaultFont);
+        await ass.resize(true);
+        if (isCurrentItemLoad(request, route, signal) && s.ass === ass) {
+          d.videoFrame.dataset.subtitleReady = "1";
+        }
+      } catch (error) {
+        if (s.ass === ass) {
+          s.ass = null;
+          await ass?.destroy().catch(() => undefined);
+        }
+        throw error;
+      }
+    }
+
     async function openItem(path: string, navigation: NavigationMode = "push", prefetched?: ItemPayload) {
+      itemAbortController?.abort();
+      subtitleAbortController?.abort();
       if (navigation !== "none") {
         routeRequest += 1;
         setStatus(d.libraryStatus);
       }
       const route = routeRequest;
       const request = ++itemRequest;
+      const itemController = new AbortController();
+      itemAbortController = itemController;
       setStatus(d.playerStatus, t("loading"));
       d.stage.dataset.signal = "transfer";
       let data: ItemPayload | null;
       try {
-        data = prefetched || await requestItem(path);
+        data = prefetched || await requestItem(path, false, itemController.signal);
       } catch (error) {
-        if (request !== itemRequest || route !== routeRequest) return;
+        if (!isCurrentItemLoad(request, route, itemController.signal)) return;
         throw error;
       }
-      if (request !== itemRequest || route !== routeRequest || !data) return;
+      if (!isCurrentItemLoad(request, route, itemController.signal) || !data) return;
       const item: MediaItem = data.item;
       const audioQueue = s.items.filter((entry) => !entry.isDir && entry.kind === "audio");
       const videoQueue = s.items.filter((entry) => !entry.isDir && entry.kind === "video");
       await clearMedia();
-      if (request !== itemRequest || route !== routeRequest) return;
+      if (!isCurrentItemLoad(request, route, itemController.signal)) return;
       s.current = item;
       resetStatSession(data.stat || { plays: 0, completions: 0, rate: 0 });
       if (item.kind === "audio" && !s.audioQueue.some((entry) => entry.path === item.path)) s.audioQueue = audioQueue;
@@ -1544,6 +1613,7 @@ const introMaxSeconds = (() => {
       updateVisitorUrl(item.path, navigation);
       trackVisitor("media", item.path);
 
+      let videoPlaybackStarted = false;
       if (item.kind === "image") {
         d.stage.dataset.mode = "image";
         d.imageFrame.hidden = false;
@@ -1576,40 +1646,40 @@ const introMaxSeconds = (() => {
         d.stage.dataset.mode = "video";
         d.videoFrame.hidden = false;
         d.video.poster = item.poster || "/poster.svg";
+        d.video.preload = "auto";
         d.video.src = item.url || "";
         d.video.load();
         updateVideoControls();
         showControls();
+        const subtitleController = new AbortController();
+        subtitleAbortController = subtitleController;
         if (item.sub) {
           try {
-            const subUrl = `/api/public/sub?path=${encodeURIComponent(item.path)}`;
-            const response = await fetch(subUrl);
-            if (!response.ok) throw new Error("Subtitle request failed.");
-            const rawSubtitle = await response.text();
-            const fontPromise = subtitleFontUrls(rawSubtitle);
-            const subContent = normalizeAssFonts(rawSubtitle, "Noto Sans SC");
-            const ass = new JASSUB({
-              video: d.video,
-              subContent
-            });
-            s.ass = ass;
-            d.videoFrame.dataset.subtitleReady = "0";
-            Promise.all([ass.ready, fontPromise]).then(async ([, font]) => {
-              if (s.ass !== ass) return;
-              await ass.renderer.addFonts(font.fonts);
-              ass.renderer.setDefaultFont(font.defaultFont);
-              await ass.resize(true);
-              d.videoFrame.dataset.subtitleReady = "1";
-            }).catch(() => {
-              if (s.ass === ass) setStatus(d.playerStatus, t("subFailed"), "error");
-            });
+            await loadVideoSubtitle(item, request, route, subtitleController.signal);
           } catch {
-            setStatus(d.playerStatus, t("subFailed"), "error");
+            if (isCurrentItemLoad(request, route, subtitleController.signal)) {
+              d.videoFrame.dataset.subtitleReady = "0";
+              setStatus(d.playerStatus, t("subFailed"), "error");
+            } else {
+              return;
+            }
+          }
+        } else {
+          delete d.videoFrame.dataset.subtitleReady;
+        }
+        if (!isCurrentItemLoad(request, route, subtitleController.signal)) return;
+        try {
+          await d.video.play();
+          videoPlaybackStarted = true;
+        } catch {
+          if (isCurrentItemLoad(request, route, subtitleController.signal)) {
+            setStatus(d.playerStatus, t("playFailed"), "error");
+          } else {
+            return;
           }
         }
-        d.video.play().catch(() => undefined);
       }
-      if (!d.playerStatus.dataset.tone) setStatus(d.playerStatus, t("playing"));
+      if (!d.playerStatus.dataset.tone && (item.kind !== "video" || videoPlaybackStarted)) setStatus(d.playerStatus, t("playing"));
     }
 
     d.list.addEventListener("click", (event) => {
