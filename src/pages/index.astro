@@ -2,7 +2,6 @@
 import {
   ArrowLeft,
   Captions,
-  FastForward,
   File,
   FileImage,
   Film,
@@ -17,7 +16,6 @@ import {
   RefreshCw,
   Repeat,
   Repeat1,
-  Rewind,
   Search,
   Shuffle,
   SkipBack,
@@ -224,11 +222,6 @@ const introMaxSeconds = (() => {
 
           <div id="videoFrame" class="video-frame" tabindex="0" hidden>
             <video id="videoPlayer" playsinline preload="auto"></video>
-            <div id="videoHoldFeedback" class="video-hold-feedback" aria-live="off" hidden>
-              <span id="videoRewindIcon" hidden><Rewind size={24} /></span>
-              <span id="videoFastIcon" hidden><FastForward size={24} /></span>
-              <strong id="videoHoldLabel"></strong>
-            </div>
             <div id="videoControls" class="video-controls">
               <label class="video-seek">
                 <span class="sr-only" data-i18n="seek">Seek</span>
@@ -588,10 +581,6 @@ const introMaxSeconds = (() => {
       empty: document.querySelector<HTMLElement>("#emptyPlayer")!,
       videoFrame: document.querySelector<HTMLElement>("#videoFrame")!,
       video: document.querySelector<HTMLVideoElement>("#videoPlayer")!,
-      videoHoldFeedback: document.querySelector<HTMLElement>("#videoHoldFeedback")!,
-      videoRewindIcon: document.querySelector<HTMLElement>("#videoRewindIcon")!,
-      videoFastIcon: document.querySelector<HTMLElement>("#videoFastIcon")!,
-      videoHoldLabel: document.querySelector<HTMLElement>("#videoHoldLabel")!,
       videoControls: document.querySelector<HTMLElement>("#videoControls")!,
       playToggle: document.querySelector<HTMLButtonElement>("#playToggle")!,
       playIcon: document.querySelector<HTMLElement>("#playIcon")!,
@@ -653,14 +642,6 @@ const introMaxSeconds = (() => {
     let routeRequest = 0;
     let searchTimer = 0;
     let videoClickTimer = 0;
-    let videoHoldTimer = 0;
-    let videoRewindTimer = 0;
-    let videoHoldMode: "rewind" | "fast" | null = null;
-    let videoHoldTriggered = false;
-    let suppressVideoClick = false;
-    let videoHoldRate = 1;
-    let videoHoldX = 0;
-    let videoHoldY = 0;
     let seeking = false;
     let audioSeeking = false;
     let lyricFrame = 0;
@@ -747,7 +728,7 @@ const introMaxSeconds = (() => {
     let statCompleted = false;
     let statTask: Promise<void> = Promise.resolve();
 
-    const VIDEO_RATES = [1, 1.25, 1.5, 2];
+    const VIDEO_RATES = [1, 1.25, 1.5, 2, 3, 4, 5, 7, 10];
 
     const e: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
     const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (x) => e[x]);
@@ -1045,64 +1026,11 @@ const introMaxSeconds = (() => {
       updateVideoControls();
     }
 
-    function showVideoHoldFeedback(mode: "rewind" | "fast") {
-      d.videoHoldFeedback.hidden = false;
-      d.videoHoldFeedback.classList.toggle("is-rewind", mode === "rewind");
-      d.videoHoldFeedback.classList.toggle("is-fast", mode === "fast");
-      d.videoRewindIcon.hidden = mode !== "rewind";
-      d.videoFastIcon.hidden = mode !== "fast";
-      d.videoHoldLabel.textContent = mode === "rewind" ? "-2s" : "2×";
-    }
-
-    function stopVideoHold() {
-      window.clearTimeout(videoHoldTimer);
-      window.clearInterval(videoRewindTimer);
-      const triggered = videoHoldTriggered;
-      if (triggered && videoHoldMode === "fast") d.video.playbackRate = videoHoldRate;
-      videoHoldTimer = 0;
-      videoRewindTimer = 0;
-      videoHoldMode = null;
-      videoHoldTriggered = false;
-      d.videoHoldFeedback.hidden = true;
+    function skipVideo(seconds: number) {
+      if (!Number.isFinite(d.video.duration)) return;
+      d.video.currentTime = Math.max(0, Math.min(d.video.duration, d.video.currentTime + seconds));
       updateVideoControls();
-      if (triggered) {
-        suppressVideoClick = true;
-        window.setTimeout(() => {
-          suppressVideoClick = false;
-        }, 350);
-      }
-    }
-
-    function beginVideoHold(event: PointerEvent) {
-      if (event.button !== 0 || d.videoControls.contains(event.target as Node)) return;
-      stopVideoHold();
-      const rect = d.videoFrame.getBoundingClientRect();
-      const ratio = (event.clientX - rect.left) / rect.width;
-      if (ratio > 1 / 6 && ratio < 5 / 6) return;
-      videoHoldMode = ratio <= 1 / 6 ? "rewind" : "fast";
-      videoHoldX = event.clientX;
-      videoHoldY = event.clientY;
-      videoHoldTimer = window.setTimeout(() => {
-        if (!videoHoldMode || (videoHoldMode === "fast" && d.video.paused)) return;
-        videoHoldTriggered = true;
-        showVideoHoldFeedback(videoHoldMode);
-        if (videoHoldMode === "fast") {
-          videoHoldRate = d.video.playbackRate || 1;
-          d.video.playbackRate = 2;
-          updateVideoControls();
-          return;
-        }
-        const rewind = () => {
-          d.video.currentTime = Math.max(0, d.video.currentTime - 2);
-        };
-        rewind();
-        videoRewindTimer = window.setInterval(rewind, 1000);
-      }, 3000);
-    }
-
-    function moveVideoHold(event: PointerEvent) {
-      if (!videoHoldMode || videoHoldTriggered) return;
-      if (Math.hypot(event.clientX - videoHoldX, event.clientY - videoHoldY) > 18) stopVideoHold();
+      showControls();
     }
 
     function updateVideoControls() {
@@ -1578,6 +1506,17 @@ const introMaxSeconds = (() => {
       }
     }
 
+    async function startVideoPlayback(request: number, route: number, signal: AbortSignal) {
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      try {
+        await d.video.play();
+        return true;
+      } catch {
+        if (isCurrentItemLoad(request, route, signal)) setStatus(d.playerStatus, t("playFailed"), "error");
+        return false;
+      }
+    }
+
     async function openItem(path: string, navigation: NavigationMode = "push", prefetched?: ItemPayload) {
       itemAbortController?.abort();
       subtitleAbortController?.abort();
@@ -1651,9 +1590,12 @@ const introMaxSeconds = (() => {
         d.video.load();
         updateVideoControls();
         showControls();
-        const subtitleController = new AbortController();
-        subtitleAbortController = subtitleController;
-        if (item.sub) {
+        if (!item.sub) {
+          delete d.videoFrame.dataset.subtitleReady;
+          videoPlaybackStarted = await startVideoPlayback(request, route, itemController.signal);
+        } else {
+          const subtitleController = new AbortController();
+          subtitleAbortController = subtitleController;
           try {
             await loadVideoSubtitle(item, request, route, subtitleController.signal);
           } catch {
@@ -1664,19 +1606,8 @@ const introMaxSeconds = (() => {
               return;
             }
           }
-        } else {
-          delete d.videoFrame.dataset.subtitleReady;
-        }
-        if (!isCurrentItemLoad(request, route, subtitleController.signal)) return;
-        try {
-          await d.video.play();
-          videoPlaybackStarted = true;
-        } catch {
-          if (isCurrentItemLoad(request, route, subtitleController.signal)) {
-            setStatus(d.playerStatus, t("playFailed"), "error");
-          } else {
-            return;
-          }
+          if (!isCurrentItemLoad(request, route, subtitleController.signal)) return;
+          videoPlaybackStarted = await startVideoPlayback(request, route, subtitleController.signal);
         }
       }
       if (!d.playerStatus.dataset.tone && (item.kind !== "video" || videoPlaybackStarted)) setStatus(d.playerStatus, t("playing"));
@@ -1831,49 +1762,30 @@ const introMaxSeconds = (() => {
     d.fullscreenToggle.addEventListener("click", () => toggleFullscreen().catch(() => undefined));
     d.videoFrame.addEventListener("click", (event) => {
       if (d.videoControls.contains(event.target as Node)) return;
-      if (suppressVideoClick) {
-        event.preventDefault();
-        return;
-      }
       window.clearTimeout(videoClickTimer);
-      const rect = d.videoFrame.getBoundingClientRect();
-      const inLeftFifth = event.clientX - rect.left <= rect.width / 5;
-      if (event.detail >= 3 && inLeftFifth) {
-        d.video.currentTime = Math.max(0, d.video.currentTime - 5);
-        updateVideoControls();
-        showControls();
-        suppressVideoClick = true;
-        window.setTimeout(() => {
-          suppressVideoClick = false;
-        }, 320);
-        return;
-      }
-      videoClickTimer = window.setTimeout(() => {
-        if (event.detail >= 2) {
+      if (event.detail === 2) {
+        const rect = d.video.getBoundingClientRect();
+        const ratio = (event.clientX - rect.left) / rect.width;
+        if (ratio < 1 / 3) skipVideo(-10);
+        else if (ratio > 2 / 3) skipVideo(10);
+        else {
           togglePlay();
           showControls();
-        } else {
-          toggleVideoControls();
         }
-      }, 280);
+        return;
+      }
+      if (event.detail !== 1) return;
+      videoClickTimer = window.setTimeout(() => toggleVideoControls(), 250);
     });
-    d.videoFrame.addEventListener("dblclick", (event) => {
-      if (d.videoControls.contains(event.target as Node) || suppressVideoClick) return;
-      event.preventDefault();
-    });
-    d.videoFrame.addEventListener("pointerdown", (event) => {
+    d.videoFrame.addEventListener("pointerdown", () => {
       d.videoFrame.focus({ preventScroll: true });
-      beginVideoHold(event);
     });
-    d.videoFrame.addEventListener("pointermove", (event) => {
-      moveVideoHold(event);
-      if (!d.videoFrame.classList.contains("controls-hidden") && !videoHoldMode) showControls();
+    d.videoFrame.addEventListener("pointermove", () => {
+      if (!d.videoFrame.classList.contains("controls-hidden")) showControls();
     });
     d.videoFrame.addEventListener("pointerleave", () => {
-      stopVideoHold();
       scheduleControls();
     });
-    d.videoFrame.addEventListener("pointercancel", stopVideoHold);
     d.videoFrame.addEventListener("contextmenu", (event) => {
       if (!d.videoControls.contains(event.target as Node)) event.preventDefault();
     });
@@ -1891,7 +1803,6 @@ const introMaxSeconds = (() => {
       updateVideoControls();
     });
     window.addEventListener("pointerup", () => {
-      stopVideoHold();
       if (seeking) {
         seeking = false;
         scheduleControls();

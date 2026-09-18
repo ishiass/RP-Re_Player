@@ -467,38 +467,6 @@ textarea:focus-visible {
   z-index: 2;
 }
 
-.video-hold-feedback {
-  position: absolute;
-  z-index: 8;
-  top: 50%;
-  display: flex;
-  align-items: center;
-  min-width: 72px;
-  gap: 7px;
-  border: 1px solid rgba(215, 234, 247, 0.96);
-  border-radius: 8px;
-  background: rgba(247, 251, 255, 0.92);
-  box-shadow: 0 8px 24px rgba(12, 31, 45, 0.2);
-  color: #5f8aa7;
-  padding: 10px 13px;
-  pointer-events: none;
-  transform: translateY(-50%);
-  backdrop-filter: blur(10px);
-}
-
-.video-hold-feedback.is-rewind {
-  left: 7%;
-}
-
-.video-hold-feedback.is-fast {
-  right: 7%;
-}
-
-.video-hold-feedback strong {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
 .video-controls {
   position: absolute;
   z-index: 10;
@@ -2099,15 +2067,6 @@ textarea:focus-visible {
   filter: contrast(1.06) saturate(0.86);
 }
 
-.video-hold-feedback {
-  border: 2px solid #eeeeE8;
-  border-radius: 0;
-  background: #111111;
-  box-shadow: 5px 5px 0 var(--accent);
-  color: #ffffff;
-  backdrop-filter: none;
-}
-
 .video-controls {
   border: 1px solid #8d8d87;
   border-left: 5px solid var(--accent);
@@ -3218,15 +3177,6 @@ body:has(.login-screen)::before {
   filter: none;
 }
 
-.media-app .video-hold-feedback {
-  border: 1px solid rgba(215, 234, 247, 0.96);
-  border-radius: 8px;
-  background: rgba(247, 251, 255, 0.92);
-  box-shadow: 0 8px 24px rgba(12, 31, 45, 0.2);
-  color: #5f8aa7;
-  backdrop-filter: blur(10px);
-}
-
 .media-app .video-controls {
   border: 1px solid rgba(215, 234, 247, 0.96);
   border-radius: 8px;
@@ -3263,6 +3213,14 @@ body:has(.login-screen)::before {
   background: linear-gradient(to right, var(--accent) var(--range-fill, 0%), #dceaf4 var(--range-fill, 0%));
 }
 
+.media-app .video-controls .video-seek input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    rgba(184, 222, 244, 0.9) var(--range-fill, 0%),
+    rgba(220, 234, 244, 0.18) var(--range-fill, 0%)
+  );
+}
+
 .media-app .video-controls input[type="range"]::-moz-range-track,
 .media-app .audio-controls input[type="range"]::-moz-range-track {
   height: 4px;
@@ -3270,11 +3228,19 @@ body:has(.login-screen)::before {
   background: #dceaf4;
 }
 
+.media-app .video-controls .video-seek input[type="range"]::-moz-range-track {
+  background: rgba(220, 234, 244, 0.18);
+}
+
 .media-app .video-controls input[type="range"]::-moz-range-progress,
 .media-app .audio-controls input[type="range"]::-moz-range-progress {
   height: 4px;
   border-radius: 4px;
   background: var(--accent);
+}
+
+.media-app .video-controls .video-seek input[type="range"]::-moz-range-progress {
+  background: rgba(184, 222, 244, 0.9);
 }
 
 .media-app .video-controls input[type="range"]::-webkit-slider-thumb,
