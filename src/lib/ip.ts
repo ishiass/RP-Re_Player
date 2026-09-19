@@ -136,7 +136,24 @@ async function lookupChina(ip: string, timeoutMs: number) {
       signal: controller.signal
     });
     if (!response.ok) return null;
-    const data = (await response.json()) as Record<string, unknown>;
+    const bytes = await response.arrayBuffer();
+    let data: Record<string, unknown> | null = null;
+    let fallback: Record<string, unknown> | null = null;
+    for (const encoding of ["utf-8", "gb18030"]) {
+      try {
+        const text = new TextDecoder(encoding).decode(bytes).replace(/^\uFEFF/, "");
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        if (!fallback) fallback = parsed;
+        if (!text.includes("\uFFFD")) {
+          data = parsed;
+          break;
+        }
+      } catch {
+        // Try the next supported encoding.
+      }
+    }
+    if (!data) data = fallback;
+    if (!data) return null;
     const countryCode = "CN";
     const province = stringValue(data.pro);
     const city = stringValue(data.city);
