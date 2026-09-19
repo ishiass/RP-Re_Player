@@ -10,6 +10,6 @@ export const POST: APIRoute = async (context) => {
   const event = String(body.event || "") as VisitorEvent;
   if (!events.has(event)) return jsonError("Event is invalid.", 400);
   if (typeof body.path !== "string" || !body.path.trim()) return jsonError("Path is required.", 400);
-  const row = await recordVisitorEvent(env, context.request, event, body.path);
+  const row = await recordVisitorEvent(env, context.request, event, body.path, context.locals.cfContext?.waitUntil.bind(context.locals.cfContext));
   return json({ ok: true, id: row.id });
 };

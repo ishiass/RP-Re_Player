@@ -57,6 +57,7 @@ RP 会自动创建并升级 `rp_pseudo_links`、`rp_media_stats`、`rp_settings`
 | `C` | 与 `A` 同时播放的可选外部音频地址；设置后 `A` 视频静音 |
 | `N` | 网站名称 |
 | `P` | 管理员密码 |
+| `T` | 是否启用中国腾讯云 / 阿里云来源识别跳转，默认开启；设置为 `0`、`false`、`off`、`no` 或 `disabled` 可关闭 |
 | `DB` | D1 绑定 |
 | `US` | Umami 脚本地址 |
 | `UI` | Umami 网站 ID |
@@ -64,6 +65,8 @@ RP 会自动创建并升级 `rp_pseudo_links`、`rp_media_stats`、`rp_settings`
 | `UD` | 可选 Umami 域名列表 |
 
 D1 可用时，RP 会在对应的 `env:变量名` 键尚不存在时，将每个非空的已绑定短变量写入 `rp_settings`。后续部署优先读取数据库中的值；未绑定或空变量不会写入。`keep_vars = true` 也会阻止 Wrangler 删除在 Cloudflare 控制台中配置的变量。
+
+`T` 默认开启。访问入口会识别中国来源的腾讯云或阿里云服务器 IP，并分别跳转到腾讯云或阿里云官网；没有识别出对应运营商、来源不是中国或探测超时则正常放行。
 
 ## Umami
 

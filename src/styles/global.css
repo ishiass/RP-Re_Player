@@ -3180,10 +3180,10 @@ body:has(.login-screen)::before {
 .media-app .video-controls {
   border: 1px solid rgba(215, 234, 247, 0.96);
   border-radius: 8px;
-  background: rgba(247, 251, 255, 0.94);
-  box-shadow: 0 8px 28px rgba(34, 72, 101, 0.17);
+  background: rgba(247, 251, 255, 0.18);
+  box-shadow: 0 8px 28px rgba(34, 72, 101, 0.1);
   color: #587890;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(10px);
   transition: opacity 180ms ease, transform 180ms ease;
 }
 

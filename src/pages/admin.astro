@@ -222,6 +222,8 @@ const loggedIn = await isAdmin(Astro.request, env);
   }
 
   <script>
+    import { visitorUrl } from "@lib/visitor-route";
+
     const c = {
       en: {
         language: "Language", console: "Admin console", signIn: "Sign in", signInCopy: "Enter the administrator password to continue.",
@@ -391,7 +393,7 @@ const loggedIn = await isAdmin(Astro.request, env);
       rows.innerHTML = visibleItems.map((item) => `
         <tr>
           <td><span class="table-file">${typeIcon(item.kind)}<span>${esc(item.name)}</span></span></td>
-          <td><span class="url-cell path-cell" title="${esc(displayPath(item.path))}">${esc(displayPath(item.path))}</span></td>
+          <td><a class="url-cell path-cell" href="${esc(visitorUrl(item.path))}" title="${esc(displayPath(item.path))}" target="_blank" rel="noreferrer">${esc(displayPath(item.path))}</a></td>
           <td><span class="type-chip">${esc(t(item.kind))}</span></td>
           <td>${item.kind === "file" ? '<span class="url-cell">-</span>' : item.sub ? '<span class="type-chip">ASS</span>' : item.lrc ? `<span class="type-chip">LRC${item.lrc2 ? " x2" : ""}</span>` : '<span class="url-cell">-</span>'}</td>
           <td><a class="url-cell source-cell" href="${esc(item.url)}" title="${esc(item.url)}" target="_blank" rel="noreferrer">${esc(item.url)}</a></td>

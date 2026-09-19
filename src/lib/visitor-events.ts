@@ -1,4 +1,5 @@
 import type { AppEnv } from "./cloudflare";
+import { clientIp, countryOnlyDetails, formatRegion, lookupInitialCountry, lookupIpDetails } from "./ip";
 
 export type VisitorEvent = "visit" | "directory" | "media" | "play";
 
@@ -8,10 +9,9 @@ export interface VisitorEventRow {
   path: string;
   ip: string;
   country: string;
+  region: string;
   createdAt: string;
 }
-
-type CfRequest = Request & { cf?: { country?: string } };
 
 declare global {
   var __RP_VISITOR_EVENTS__: VisitorEventRow[] | undefined;
@@ -22,30 +22,6 @@ function memory() {
   return globalThis.__RP_VISITOR_EVENTS__;
 }
 
-function clientIp(request: Request) {
-  const value = (request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0] || "").trim();
-  if (!value || value.length > 64 || !/^[0-9a-f:.]+$/i.test(value)) return "";
-  if (value === "::1" || value.startsWith("127.") || value.startsWith("10.") || value.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(value) || /^(fc|fd|fe8|fe9|fea|feb)/i.test(value)) return "";
-  return value;
-}
-
-async function countryFor(request: Request, ip: string) {
-  const fallback = String((request as CfRequest).cf?.country || "").toUpperCase().slice(0, 8);
-  if (!ip) return fallback;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 1800);
-  try {
-    const response = await fetch(`https://api.country.is/${encodeURIComponent(ip)}`, { headers: { accept: "application/json" }, signal: controller.signal });
-    if (!response.ok) return fallback;
-    const data = (await response.json()) as { country?: string };
-    return String(data.country || fallback).toUpperCase().slice(0, 8);
-  } catch {
-    return fallback;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function ensureDb(env: AppEnv) {
   if (!env.DB) return false;
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS rp_visitor_events (
@@ -54,37 +30,65 @@ async function ensureDb(env: AppEnv) {
     path TEXT NOT NULL,
     ip TEXT,
     country TEXT,
+    region TEXT,
     created_at TEXT NOT NULL
   )`).run();
+  await env.DB.prepare("ALTER TABLE rp_visitor_events ADD COLUMN region TEXT").run().catch(() => undefined);
   return true;
 }
 
-export async function recordVisitorEvent(env: AppEnv, request: Request, event: VisitorEvent, path: string) {
+async function enrichVisitorEvent(env: AppEnv, row: VisitorEventRow) {
+  if (!row.ip || !row.country) return;
+  try {
+    const details = await lookupIpDetails(row.ip, row.country, 9000);
+    if (!details) return;
+    row.region = formatRegion(details, row.createdAt);
+    if (await ensureDb(env)) {
+      await env.DB!.prepare("UPDATE rp_visitor_events SET region = ? WHERE id = ?").bind(row.region, row.id).run();
+    }
+  } catch {
+    // The initial country record is intentionally retained when enrichment fails.
+  }
+}
+
+export async function recordVisitorEvent(
+  env: AppEnv,
+  request: Request,
+  event: VisitorEvent,
+  path: string,
+  waitUntil?: (promise: Promise<unknown>) => void
+) {
   const normalizedPath = String(path || "/").slice(0, 500);
   const ip = clientIp(request);
+  const country = await lookupInitialCountry(request, ip);
+  const createdAt = new Date().toISOString();
   const row: VisitorEventRow = {
     id: crypto.randomUUID(),
     event,
     path: normalizedPath,
     ip,
-    country: await countryFor(request, ip),
-    createdAt: new Date().toISOString()
+    country,
+    region: country ? formatRegion(countryOnlyDetails(country), createdAt) : "-",
+    createdAt
   };
   if (await ensureDb(env)) {
-    await env.DB!.prepare("INSERT INTO rp_visitor_events (id, event, path, ip, country, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(row.id, row.event, row.path, row.ip, row.country, row.createdAt).run();
+    await env.DB!.prepare("INSERT INTO rp_visitor_events (id, event, path, ip, country, region, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(row.id, row.event, row.path, row.ip, row.country, row.region, row.createdAt).run();
   } else {
     memory().unshift(row);
     memory().splice(5000);
   }
+  const detailTask = enrichVisitorEvent(env, row);
+  if (waitUntil) waitUntil(detailTask);
+  else void detailTask;
   return row;
 }
 
 export async function listVisitorEvents(env: AppEnv, limit = 200) {
   const safeLimit = Math.min(500, Math.max(1, Math.floor(limit)));
   if (await ensureDb(env)) {
-    const result = await env.DB!.prepare("SELECT id, event, path, ip, country, created_at FROM rp_visitor_events ORDER BY created_at DESC LIMIT ?").bind(safeLimit).all<any>();
-    return (result.results ?? []).map((row) => ({ id: row.id, event: row.event, path: row.path, ip: row.ip || "", country: row.country || "", createdAt: row.created_at }));
+    const result = await env.DB!.prepare("SELECT id, event, path, ip, country, region, created_at FROM rp_visitor_events ORDER BY created_at DESC LIMIT ?").bind(safeLimit).all<any>();
+    return (result.results ?? []).map((row) => ({ id: row.id, event: row.event, path: row.path, ip: row.ip || "", country: row.country || "", region: row.region || row.country || "-", createdAt: row.created_at }));
   }
   return memory().slice(0, safeLimit);
 }

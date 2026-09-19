@@ -1,5 +1,6 @@
 ---
 import SiteShell from "../layouts/SiteShell.astro";
+import { Palette } from "@lucide/astro";
 import { getEnv } from "@lib/cloudflare";
 import { isAdmin } from "@lib/admin";
 import { listVisitorEvents, visitorSummary } from "@lib/visitor-events";
@@ -23,10 +24,10 @@ const initialLang = saved === "zh" || saved === "ja" || saved === "en" ? saved :
     </main>
   ) : (
     <main id="tablePage" class="table-page" data-lang={initialLang}>
-      <header class="table-header"><div><div class="eyebrow">RE-PLAYER / TABLE</div><h1 data-i18n="title"></h1></div><a href="/admin" data-i18n="admin"></a></header>
+      <header class="table-header"><div><div class="eyebrow">RE-PLAYER / TABLE</div><h1 data-i18n="title"></h1></div><div class="table-header-actions"><button id="tableThemeBtn" class="theme-button" type="button" title="Switch theme" aria-label="Switch theme"><Palette size={17} aria-hidden="true" /><span class="sr-only" data-i18n="theme"></span></button><a href="/admin" data-i18n="admin"></a></div></header>
       <section class="summary-grid" id="summaryGrid"></section>
       <section class="event-panel"><div class="event-toolbar"><strong data-i18n="recent"></strong><button id="tableRefresh" type="button" data-i18n="refresh"></button></div>
-        <div class="table-scroll"><table><thead><tr><th data-i18n="time"></th><th data-i18n="event"></th><th data-i18n="path"></th><th>IP</th><th data-i18n="country"></th></tr></thead><tbody id="eventRows"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th data-i18n="path"></th><th>IP</th><th data-i18n="region"></th></tr></thead><tbody id="eventRows"></tbody></table></div>
       </section>
       <script is:inline type="application/json" id="tableData" set:html={JSON.stringify({ summary, events })}></script>
     </main>
@@ -35,42 +36,49 @@ const initialLang = saved === "zh" || saved === "ja" || saved === "en" ? saved :
     (() => {
       const page = document.querySelector("#tablePage"); if (!page) return;
       const messages = {
-        en: { title: "Visitor analytics", loginCopy: "Enter the administrator password to view visitor activity.", password: "Administrator password", unlock: "Unlock table", admin: "Admin", recent: "Recent activity", refresh: "Refresh", time: "Time", event: "Event", path: "Path", country: "Country", empty: "No visitor activity recorded.", wrong: "Password is incorrect.", events: { visit: "visit", directory: "directory", media: "media", play: "play" } },
-        zh: { title: "访客统计", loginCopy: "请输入管理员密码查看访客活动。", password: "管理员密码", unlock: "解锁统计表", admin: "管理后台", recent: "最近活动", refresh: "刷新", time: "时间", event: "事件", path: "路径", country: "地区", empty: "暂无访客活动记录。", wrong: "密码错误。", events: { visit: "访问", directory: "目录", media: "媒体", play: "播放" } },
-        ja: { title: "ほうもんしゃ とうけい", loginCopy: "かんりしゃ パスワードを いれて かつどうを みます。", password: "かんりしゃ パスワード", unlock: "とうけいを ひらく", admin: "かんり がめん", recent: "さいきんの かつどう", refresh: "こうしん", time: "じかん", event: "イベント", path: "パス", country: "くに", empty: "ほうもん きろくは ありません。", wrong: "パスワードが ちがいます。", events: { visit: "ほうもん", directory: "ディレクトリ", media: "メディア", play: "さいせい" } }
+        en: { title: "Visitor analytics", loginCopy: "Enter the administrator password to view visitor activity.", password: "Administrator password", unlock: "Unlock table", admin: "Admin", recent: "Recent activity", refresh: "Refresh", path: "Path", region: "Region", theme: "Switch table theme", empty: "No visitor activity recorded.", wrong: "Password is incorrect.", darkTheme: "Dark table theme", lightTheme: "Light table theme", events: { visit: "visit", directory: "directory", media: "media", play: "play" } },
+        zh: { title: "访客统计", loginCopy: "请输入管理员密码查看访客活动。", password: "管理员密码", unlock: "解锁统计表", admin: "管理后台", recent: "最近活动", refresh: "刷新", path: "路径", region: "地区", theme: "切换表格主题", empty: "暂无访客活动记录。", wrong: "密码错误。", darkTheme: "深色表格主题", lightTheme: "浅色表格主题", events: { visit: "访问", directory: "目录", media: "媒体", play: "播放" } },
+        ja: { title: "ほうもんしゃ とうけい", loginCopy: "かんりしゃ パスワードを いれて かつどうを みます。", password: "かんりしゃ パスワード", unlock: "とうけいを ひらく", admin: "かんり がめん", recent: "さいきんの かつどう", refresh: "こうしん", path: "パス", region: "ちいき", theme: "ひょうのテーマをきりかえ", empty: "ほうもん きろくは ありません。", wrong: "パスワードが ちがいます。", darkTheme: "ダークテーマ", lightTheme: "ライトテーマ", events: { visit: "ほうもん", directory: "ディレクトリ", media: "メディア", play: "さいせい" } }
       };
       const valid = (value) => value === "zh" || value === "ja" || value === "en";
       const cookieValue = document.cookie.split("; ").find((part) => part.startsWith("rp_l="))?.slice(5) || "";
       const browser = (navigator.language || "").toLowerCase();
       let lang = valid(cookieValue) ? cookieValue : browser.startsWith("zh") ? "zh" : browser.startsWith("ja") ? "ja" : page.dataset.lang || "en";
+      let tableTheme = "dark";
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[char]));
-      const formatTime = (value, currentLang) => {
-        const date = new Date(value);
-        // Database timestamps are UTC (+0); this correction is display-only and is never written back.
-        const offset = currentLang === "zh" ? 8 : currentLang === "ja" ? 7 : 0;
-        const adjusted = new Date(date.getTime() + offset * 60 * 60 * 1000);
-        return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : currentLang === "ja" ? "ja-JP" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(adjusted);
+      const displayPath = (value) => String(value || "/").replace(/^\/root(?=\/|$)/, "") || "/";
+      const applyTheme = () => {
+        page.dataset.theme = tableTheme;
+        const button = document.querySelector("#tableThemeBtn");
+        if (button) {
+          const t = messages[lang] || messages.en;
+          button.title = tableTheme === "dark" ? t.lightTheme : t.darkTheme;
+          button.setAttribute("aria-label", button.title);
+        }
       };
       const apply = () => {
-        const t = messages[lang] || messages.en; page.dataset.lang = lang; document.documentElement.lang = lang === "zh" ? "zh-CN" : lang;
+        const t = messages[lang] || messages.en; page.dataset.lang = lang; document.documentElement.lang = lang === "zh" ? "zh-CN" : lang; applyTheme();
         page.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t[el.dataset.i18n] || ""; }); page.querySelectorAll("[data-i18n-placeholder]").forEach((el) => { el.placeholder = t[el.dataset.i18nPlaceholder] || ""; });
         const dataEl = document.querySelector("#tableData"); if (!dataEl) return; const data = JSON.parse(dataEl.textContent || "{}");
         const summaryGrid = document.querySelector("#summaryGrid"); if (summaryGrid) summaryGrid.innerHTML = (data.summary?.length ? data.summary : [{ event: "", count: 0 }]).map((row) => `<div class="summary-card"><span>${t.events[row.event] || (row.event ? row.event : t.empty)}</span><strong>${row.count}</strong></div>`).join("");
-        const rows = document.querySelector("#eventRows"); if (!rows) return; rows.innerHTML = data.events?.length ? data.events.map((row) => `<tr><td>${formatTime(row.createdAt, lang)}</td><td><span>${t.events[row.event] || escapeHtml(row.event)}</span></td><td>${escapeHtml(row.path)}</td><td>${escapeHtml(row.ip || "-")}</td><td>${escapeHtml(row.country || "-")}</td></tr>`).join("") : `<tr><td colspan="5">${t.empty}</td></tr>`;
+        const rows = document.querySelector("#eventRows"); if (!rows) return; rows.innerHTML = data.events?.length ? data.events.map((row) => `<tr><td>${escapeHtml(displayPath(row.path))}</td><td>${escapeHtml(row.ip || "-")}</td><td><span>${escapeHtml(row.region || row.country || "-")}</span></td></tr>`).join("") : `<tr><td colspan="3">${t.empty}</td></tr>`;
       };
+      tableTheme = localStorage.getItem("rp_table_theme") === "light" ? "light" : "dark";
       apply();
       if (!valid(cookieValue)) fetch("/api/public/geo").then((response) => response.json()).then((data) => { if (data?.ok && valid(data.lang)) { lang = data.lang; document.cookie = `rp_l=${encodeURIComponent(lang)}; Path=/; Max-Age=31536000; SameSite=Lax`; apply(); } }).catch(() => undefined);
       const form = document.querySelector("#tableLoginForm"); form?.addEventListener("submit", async (event) => { event.preventDefault(); const password = new FormData(form).get("password"); const response = await fetch("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) location.reload(); else document.querySelector("#tableLoginStatus").textContent = (messages[lang] || messages.en).wrong; });
       document.querySelector("#tableRefresh")?.addEventListener("click", () => location.reload());
+      document.querySelector("#tableThemeBtn")?.addEventListener("click", () => { tableTheme = tableTheme === "dark" ? "light" : "dark"; localStorage.setItem("rp_table_theme", tableTheme); applyTheme(); });
     })();
   </script>
   <style>
-    :global(html), :global(body) { margin: 0; min-width: 320px; min-height: 100%; background: #101214; color: #e9edf0; font-family: Inter, system-ui, sans-serif; }
-    .table-login, .table-page { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; padding: clamp(24px, 5vw, 72px); } .table-login { display: grid; place-items: center; background: radial-gradient(circle at 15% 10%, #26313c, #101214 52%); }
-    .login-card { width: min(440px, 100%); padding: 34px; border: 1px solid #34404a; background: #171b20; box-shadow: 0 24px 80px #0008; } .eyebrow { color: #68d5b0; font-size: 11px; letter-spacing: .18em; } h1 { margin: 10px 0 12px; font-size: clamp(28px, 5vw, 48px); font-weight: 500; } p { color: #aeb8c0; }
-    form { display: grid; gap: 12px; margin-top: 24px; } input, button, a { box-sizing: border-box; min-height: 42px; border: 1px solid #3b4852; padding: 10px 14px; font: inherit; } input { color: #eef4f7; background: #0f1215; } button, a { color: #08110f; background: #68d5b0; cursor: pointer; text-decoration: none; text-align: center; } #tableLoginStatus { min-height: 20px; color: #ff8792; }
-    .table-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; border-bottom: 1px solid #34404a; padding-bottom: 22px; } .table-header h1 { margin-bottom: 0; } .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 24px 0; } .summary-card { padding: 18px; border: 1px solid #34404a; background: #171b20; } .summary-card span { display: block; color: #9aa7af; text-transform: uppercase; font-size: 11px; letter-spacing: .12em; } .summary-card strong { display: block; margin-top: 8px; color: #68d5b0; font-size: 30px; font-weight: 500; }
-    .event-panel { border: 1px solid #34404a; background: #171b20; } .event-toolbar { display: flex; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid #34404a; } .event-toolbar button { min-height: 32px; padding: 5px 12px; } .table-scroll { overflow: auto; } table { width: 100%; border-collapse: collapse; min-width: 700px; } th, td { padding: 13px 16px; border-bottom: 1px solid #293139; text-align: left; white-space: nowrap; } th { color: #8e9ba4; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; } td { color: #d7e0e5; font-size: 13px; } td span { color: #68d5b0; }
+    :global(html), :global(body) { margin: 0; min-width: 320px; min-height: 100%; background: #101214; font-family: Inter, system-ui, sans-serif; }
+    #tablePage { --bg: #101214; --surface: #171b20; --line: #34404a; --line-soft: #293139; --text: #e9edf0; --muted: #aeb8c0; --accent: #68d5b0; --accent-ink: #08110f; min-height: 100vh; min-height: 100dvh; box-sizing: border-box; padding: clamp(24px, 5vw, 72px); background: var(--bg); color: var(--text); }
+    #tablePage[data-theme="light"] { --bg: #ffffff; --surface: #f5f7f8; --line: #cad3d8; --line-soft: #dce3e7; --text: #111820; --muted: #53616b; --accent: hsl(200 82% 42%); --accent-ink: #ffffff; }
+    .table-login { display: grid; place-items: center; background: var(--bg); } .login-card { width: min(440px, 100%); padding: 34px; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 24px 80px #0008; } .eyebrow { color: var(--accent); font-size: 11px; letter-spacing: .18em; } h1 { margin: 10px 0 12px; font-size: clamp(28px, 5vw, 48px); font-weight: 500; } p { color: var(--muted); }
+    form { display: grid; gap: 12px; margin-top: 24px; } input, button, a { box-sizing: border-box; min-height: 42px; border: 1px solid var(--line); padding: 10px 14px; font: inherit; } input { color: var(--text); background: var(--bg); } button, a { color: var(--accent-ink); background: var(--accent); cursor: pointer; text-decoration: none; text-align: center; } #tableLoginStatus { min-height: 20px; color: #d12d43; }
+    .table-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; border-bottom: 1px solid var(--line); padding-bottom: 22px; } .table-header h1 { margin-bottom: 0; } .table-header-actions { display: flex; align-items: center; gap: 8px; } .theme-button { display: inline-grid; place-items: center; min-width: 42px; padding: 8px; } .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 24px 0; } .summary-card { padding: 18px; border: 1px solid var(--line); background: var(--surface); } .summary-card span { display: block; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .12em; } .summary-card strong { display: block; margin-top: 8px; color: var(--accent); font-size: 30px; font-weight: 500; }
+    .event-panel { border: 1px solid var(--line); background: var(--surface); } .event-toolbar { display: flex; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); } .event-toolbar button { min-height: 32px; padding: 5px 12px; } .table-scroll { overflow: auto; } table { width: 100%; border-collapse: collapse; min-width: 620px; } th, td { padding: 13px 16px; border-bottom: 1px solid var(--line-soft); text-align: left; white-space: nowrap; } th { color: var(--muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; } td { color: var(--text); font-size: 13px; } td span { color: var(--accent); }
     @media (max-width: 560px) { .table-header { align-items: start; flex-direction: column; } .login-card { padding: 24px; } }
   </style>
 </SiteShell>

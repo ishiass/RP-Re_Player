@@ -1030,7 +1030,6 @@ const introMaxSeconds = (() => {
       if (!Number.isFinite(d.video.duration)) return;
       d.video.currentTime = Math.max(0, Math.min(d.video.duration, d.video.currentTime + seconds));
       updateVideoControls();
-      showControls();
     }
 
     function updateVideoControls() {
@@ -1818,6 +1817,7 @@ const introMaxSeconds = (() => {
     });
     ["play", "pause", "ended", "timeupdate", "durationchange", "loadedmetadata", "volumechange", "ratechange"].forEach((event) => {
       d.video.addEventListener(event, () => {
+        const controlsHidden = d.videoFrame.classList.contains("controls-hidden");
         updateVideoControls();
         if (event === "timeupdate") saveProgress();
         if (event === "play") {
@@ -1829,7 +1829,7 @@ const introMaxSeconds = (() => {
           recordStat("complete");
         }
         if (event === "pause") saveProgress(true);
-        if (event === "pause" || event === "ended") showControls();
+        if ((event === "pause" || event === "ended") && !controlsHidden) showControls();
       });
     });
     d.video.addEventListener("loadedmetadata", () => restoreProgress(d.video));
