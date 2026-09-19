@@ -4,11 +4,13 @@ import { Palette } from "@lucide/astro";
 import { getEnv } from "@lib/cloudflare";
 import { isAdmin } from "@lib/admin";
 import { listVisitorEvents, visitorSummary } from "@lib/visitor-events";
+import { clientIp, lookupInitialCountry } from "@lib/ip";
 
 const env = await getEnv(Astro);
 const loggedIn = await isAdmin(Astro.request, env);
 const summary = loggedIn ? await visitorSummary(env) : [];
 const events = loggedIn ? await listVisitorEvents(env, 300) : [];
+const adminCountry = loggedIn ? await lookupInitialCountry(Astro.request, clientIp(Astro.request)) : "";
 const cookie = Astro.request.headers.get("cookie") || "";
 const saved = cookie.match(/(?:^|;\s*)rp_l=([^;]+)/)?.[1] || "";
 const accept = (Astro.request.headers.get("accept-language") || "").toLowerCase();
@@ -23,11 +25,11 @@ const initialLang = saved === "zh" || saved === "ja" || saved === "en" ? saved :
       </section>
     </main>
   ) : (
-    <main id="tablePage" class="table-page" data-lang={initialLang}>
+    <main id="tablePage" class="table-page" data-lang={initialLang} data-admin-country={adminCountry}>
       <header class="table-header"><div><div class="eyebrow">RE-PLAYER / TABLE</div><h1 data-i18n="title"></h1></div><div class="table-header-actions"><button id="tableThemeBtn" class="theme-button" type="button" title="Switch theme" aria-label="Switch theme"><Palette size={17} aria-hidden="true" /><span class="sr-only" data-i18n="theme"></span></button><a href="/admin" data-i18n="admin"></a></div></header>
       <section class="summary-grid" id="summaryGrid"></section>
       <section class="event-panel"><div class="event-toolbar"><strong data-i18n="recent"></strong><button id="tableRefresh" type="button" data-i18n="refresh"></button></div>
-        <div class="table-scroll"><table><thead><tr><th data-i18n="path"></th><th data-i18n="time"></th><th>IP</th><th data-i18n="region"></th></tr></thead><tbody id="eventRows"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th data-i18n="path"></th><th id="tableTimeHeader" data-i18n="time"></th><th>IP</th><th data-i18n="region"></th></tr></thead><tbody id="eventRows"></tbody></table></div>
       </section>
       <script is:inline type="application/json" id="tableData" set:html={JSON.stringify({ summary, events })}></script>
     </main>
@@ -47,38 +49,51 @@ const initialLang = saved === "zh" || saved === "ja" || saved === "en" ? saved :
       let tableTheme = "dark";
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[char]));
       const displayPath = (value) => String(value || "/").replace(/^\/root(?=\/|$)/, "") || "/";
-      const compactPath = (value) => {
-        const text = displayPath(value);
-        const chars = Array.from(text);
-        const removeCount = chars.length > 11 ? 7 : chars.length > 7 ? 3 : 0;
-        if (!removeCount) return text;
+      const compactSegment = (segment) => {
+        const chars = Array.from(segment);
         const protectedRanges = [];
-        const protectedPattern = /\[\d{2}\]|\d{2}/g;
+        const protectedPattern = /\[\d{2}\]|(?<!\d)\d{2}(?!\d)/g;
         let match;
-        while ((match = protectedPattern.exec(text))) {
-          const start = Array.from(text.slice(0, match.index)).length;
+        while ((match = protectedPattern.exec(segment))) {
+          const start = Array.from(segment.slice(0, match.index)).length;
           protectedRanges.push([start, start + Array.from(match[0]).length]);
         }
+        const extension = segment.match(/\.[^./\s]+$/);
+        if (extension?.index !== undefined) {
+          const start = Array.from(segment.slice(0, extension.index)).length;
+          protectedRanges.push([start, chars.length]);
+        }
+        const protectedLength = protectedRanges.reduce((total, [from, to]) => total + to - from, 0);
+        const actualLength = chars.length - protectedLength;
+        const removeCount = actualLength > 11 ? 7 : actualLength >= 6 ? 3 : 0;
+        if (!removeCount) return segment;
+        const isProtected = (index) => protectedRanges.some(([from, to]) => index >= from && index < to);
+        const removable = chars.map((_, index) => index).filter((index) => !isProtected(index));
+        if (removable.length < removeCount) return segment;
         const middle = Math.floor((chars.length - removeCount) / 2);
-        const overlapsProtected = (start) => protectedRanges.some(([from, to]) => start < to && start + removeCount > from);
         for (let distance = 0; distance <= chars.length; distance += 1) {
           const candidates = distance === 0 ? [middle] : [middle - distance, middle + distance];
           for (const start of candidates) {
-            if (start < 0 || start + removeCount > chars.length || overlapsProtected(start)) continue;
+            if (start < 0 || start + removeCount > chars.length) continue;
+            if (!Array.from({ length: removeCount }, (_, index) => start + index).every((index) => !isProtected(index))) continue;
             return `${chars.slice(0, start).join("")}...${chars.slice(start + removeCount).join("")}`;
           }
         }
-        return text;
+        return segment;
       };
+      const compactPath = (value) => displayPath(value).split("/").map((segment) => compactSegment(segment)).join("/");
       const displayRegion = (value, country) => {
         const region = String(value || country || "-").replace(/\uFFFD+/g, "").replace(/^\s*-\s*/, "").trim();
         return region || String(country || "-");
       };
-      const displayTime = (value, country) => {
+      const countryOffset = (country) => {
+        const code = String(country || "").toUpperCase();
+        return code === "CN" ? 8 : code === "JP" ? 9 : 0;
+      };
+      const displayTime = (value) => {
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return "-";
-        const code = String(country || "").toUpperCase();
-        const offset = code === "CN" ? 8 : code === "JP" ? 9 : 0;
+        const offset = countryOffset(page.dataset.adminCountry);
         const local = new Date(date.getTime() + offset * 60 * 60 * 1000);
         const hours = String(local.getUTCHours()).padStart(2, "0");
         const minutes = String(local.getUTCMinutes()).padStart(2, "0");
@@ -96,9 +111,10 @@ const initialLang = saved === "zh" || saved === "ja" || saved === "en" ? saved :
       const apply = () => {
         const t = messages[lang] || messages.en; page.dataset.lang = lang; document.documentElement.lang = lang === "zh" ? "zh-CN" : lang; applyTheme();
         page.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t[el.dataset.i18n] || ""; }); page.querySelectorAll("[data-i18n-placeholder]").forEach((el) => { el.placeholder = t[el.dataset.i18nPlaceholder] || ""; });
+        const timeHeader = document.querySelector("#tableTimeHeader"); if (timeHeader) timeHeader.textContent = `${t.time}:${countryOffset(page.dataset.adminCountry) >= 0 ? "+" : ""}${countryOffset(page.dataset.adminCountry)}`;
         const dataEl = document.querySelector("#tableData"); if (!dataEl) return; const data = JSON.parse(dataEl.textContent || "{}");
         const summaryGrid = document.querySelector("#summaryGrid"); if (summaryGrid) summaryGrid.innerHTML = (data.summary?.length ? data.summary : [{ event: "", count: 0 }]).map((row) => `<div class="summary-card"><span>${t.events[row.event] || (row.event ? row.event : t.empty)}</span><strong>${row.count}</strong></div>`).join("");
-        const rows = document.querySelector("#eventRows"); if (!rows) return; rows.innerHTML = data.events?.length ? data.events.map((row) => `<tr><td title="${escapeHtml(displayPath(row.path))}">${escapeHtml(compactPath(row.path))}</td><td>${escapeHtml(displayTime(row.createdAt, row.country))}</td><td>${escapeHtml(row.ip || "-")}</td><td><span>${escapeHtml(displayRegion(row.region, row.country))}</span></td></tr>`).join("") : `<tr><td colspan="4">${t.empty}</td></tr>`;
+        const rows = document.querySelector("#eventRows"); if (!rows) return; rows.innerHTML = data.events?.length ? data.events.map((row) => `<tr><td title="${escapeHtml(displayPath(row.path))}">${escapeHtml(compactPath(row.path))}</td><td>${escapeHtml(displayTime(row.createdAt))}</td><td>${escapeHtml(row.ip || "-")}</td><td><span>${escapeHtml(displayRegion(row.region, row.country))}</span></td></tr>`).join("") : `<tr><td colspan="4">${t.empty}</td></tr>`;
       };
       tableTheme = localStorage.getItem("rp_table_theme") === "light" ? "light" : "dark";
       apply();
