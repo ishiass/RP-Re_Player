@@ -186,11 +186,16 @@ const loggedIn = await isAdmin(Astro.request, env);
               <span data-i18n="assUrl">ASS subtitle URL</span>
               <input name="sub" type="url" placeholder="https://example.com/subtitle.ass" autocomplete="off" />
             </label>
-            <label id="embeddedMultiField" class="toggle-field">
-              <input id="embeddedMultiToggle" name="embeddedMulti" type="checkbox" value="1" />
-              <span class="toggle-track" aria-hidden="true"><span></span></span>
-              <span data-i18n="embeddedMultiSubtitles">H5 difficult playback</span>
-            </label>
+            <div id="embeddedMultiField" class="h5-player-field" hidden>
+              <label class="h5-player-enable">
+                <input id="embeddedMultiToggle" name="embeddedMulti" type="checkbox" value="1" />
+                <span data-i18n="embeddedMultiSubtitles">H5 difficult playback</span>
+              </label>
+              <div class="h5-player-options">
+                <label><input name="h5Player" type="checkbox" value="playsvideo" /><span data-i18n="playsVideo">PlaysVideo</span></label>
+                <label><input name="h5Player" type="checkbox" value="movi" /><span data-i18n="moviPlayer">Movi Player</span></label>
+              </div>
+            </div>
             <div id="lrcFields" class="lyrics-fields" hidden>
               <label class="field">
                 <span data-i18n="lrcUrl">Lyrics URL</span>
@@ -237,7 +242,7 @@ const loggedIn = await isAdmin(Astro.request, env);
         name: "Name", path: "Path", type: "Type", subtitle: "Subtitles / Lyrics", source: "Source", actions: "Actions",
         loading: "Loading...", addMount: "Add pseudo mount", close: "Close", folder: "Folder", video: "Video",
         audio: "Audio", image: "Image", file: "File", posterUrl: "Poster URL", mediaUrl: "Media URL", url: "URL", assUrl: "ASS subtitle URL",
-        lrcUrl: "Lyrics URL", bilingual: "Bilingual lyrics", otherLrcUrl: "Other-language lyrics URL", embeddedMultiSubtitles: "H5 difficult playback", description: "Description", descriptionHint: "Markdown supported. Start a line with ##ffffff: or ##rgb(255,255,255): to set its color.",
+        lrcUrl: "Lyrics URL", bilingual: "Bilingual lyrics", otherLrcUrl: "Other-language lyrics URL", embeddedMultiSubtitles: "H5 difficult playback", playsVideo: "PlaysVideo", moviPlayer: "Movi Player", description: "Description", descriptionHint: "Markdown supported. Start a line with ##ffffff: or ##rgb(255,255,255): to set its color.",
         cancel: "Cancel", create: "Create", empty: "No pseudo mounts yet", item: "item", items: "items",
         wrongPassword: "Incorrect password.", signingIn: "Signing in...", loadFailed: "Could not load pseudo mounts.",
         createFailed: "Could not create the pseudo mount.", created: "Pseudo mount created.", delete: "Delete",
@@ -250,7 +255,7 @@ const loggedIn = await isAdmin(Astro.request, env);
         addFile: "添加文件", refresh: "刷新", name: "文件名", path: "路径", type: "类型", subtitle: "字幕 / 歌词",
         source: "源链接", actions: "操作", loading: "正在加载...", addMount: "添加伪挂载", close: "关闭",
         folder: "目录", video: "视频", audio: "音频", image: "图片", file: "文件", posterUrl: "封面链接", mediaUrl: "媒体链接", url: "链接",
-        assUrl: "ASS 字幕链接", lrcUrl: "歌词链接", bilingual: "是否双语", otherLrcUrl: "另一语言歌词链接", embeddedMultiSubtitles: "H5 难以播放", description: "说明", descriptionHint: "支持 Markdown。行首使用 ##ffffff: 或 ##rgb(255,255,255): 设置该行文字颜色。",
+        assUrl: "ASS 字幕链接", lrcUrl: "歌词链接", bilingual: "是否双语", otherLrcUrl: "另一语言歌词链接", embeddedMultiSubtitles: "H5 难以播放", playsVideo: "PlaysVideo", moviPlayer: "Movi Player", description: "说明", descriptionHint: "支持 Markdown。行首使用 ##ffffff: 或 ##rgb(255,255,255): 设置该行文字颜色。",
         cancel: "取消", create: "创建", empty: "暂无伪挂载", item: "项", items: "项",
         wrongPassword: "密码错误。", signingIn: "正在登录...", loadFailed: "无法读取伪挂载。",
         createFailed: "无法创建伪挂载。", created: "伪挂载已创建。", delete: "删除", deleteConfirm: "删除此伪挂载？",
@@ -263,7 +268,7 @@ const loggedIn = await isAdmin(Astro.request, env);
         name: "名前", path: "パス", type: "種類", subtitle: "字幕 / 歌詞", source: "元リンク", actions: "操作",
         loading: "読み込み中...", addMount: "疑似マウントを追加", close: "閉じる", folder: "フォルダー",
         video: "動画", audio: "音声", image: "画像", file: "ファイル", posterUrl: "ポスターURL", mediaUrl: "メディアURL", url: "リンク",
-        assUrl: "ASS字幕URL", lrcUrl: "歌詞URL", bilingual: "二言語歌詞", otherLrcUrl: "別言語の歌詞URL", embeddedMultiSubtitles: "H5 で再生困難", description: "説明", descriptionHint: "Markdown 対応。行頭に ##ffffff: または ##rgb(255,255,255): で色を指定します。",
+        assUrl: "ASS字幕URL", lrcUrl: "歌詞URL", bilingual: "二言語歌詞", otherLrcUrl: "別言語の歌詞URL", embeddedMultiSubtitles: "H5 で再生困難", playsVideo: "PlaysVideo", moviPlayer: "Movi Player", description: "説明", descriptionHint: "Markdown 対応。行頭に ##ffffff: または ##rgb(255,255,255): で色を指定します。",
         cancel: "キャンセル", create: "作成", empty: "疑似マウントはありません", item: "件",
         items: "件", wrongPassword: "パスワードが正しくありません。", signingIn: "ログイン中...",
         loadFailed: "疑似マウントを読み込めませんでした。", createFailed: "疑似マウントを作成できませんでした。",
@@ -273,13 +278,13 @@ const loggedIn = await isAdmin(Astro.request, env);
     } as const;
 
     type Lang = keyof typeof c;
-    type Item = { id: string; name: string; path: string; url: string; kind: "video" | "audio" | "image" | "file"; description?: string; poster?: string; sub?: string; embeddedMulti?: boolean; lrc?: string; lrc2?: string };
+    type Item = { id: string; name: string; path: string; url: string; kind: "video" | "audio" | "image" | "file"; description?: string; poster?: string; sub?: string; embeddedMulti?: boolean; h5Player?: "playsvideo" | "movi"; lrc?: string; lrc2?: string };
     type VisitorTheme = "blue" | "retro" | "future" | "tech" | "gray";
     let lang: Lang = "en";
     let items: Item[] = [];
     let currentFolder = "/root";
     let visitorTheme: VisitorTheme = "blue";
-    const collapsedFolders = new Set<string>();
+    const expandedFolders = new Set<string>(["/root"]);
     const themeNames: Record<Lang, Record<VisitorTheme, string>> = {
       en: { blue: "Default", retro: "Retro", future: "Azure", tech: "New Blue", gray: "Light Gray" },
       zh: { blue: "默认", retro: "复古", future: "蔚蓝", tech: "新蓝", gray: "浅灰" },
@@ -371,18 +376,18 @@ const loggedIn = await isAdmin(Astro.request, env);
       const chevron = document.querySelector<HTMLTemplateElement>("#treeChevron")?.innerHTML || "";
       const row = (path: string, depth: number, root = false) => {
         const hasChildren = Boolean(children.get(path)?.length);
-        const collapsed = collapsedFolders.has(path);
+        const expanded = expandedFolders.has(path);
         const name = root ? t("rootDirectory") : shortFolderName(path);
         const indent = root ? 10 : 34 + (Math.max(0, depth) % 4) * 24;
         return `
-          <button class="admin-tree-item${currentFolder === path ? " is-active" : ""}${root ? " is-root" : ""}" type="button" data-folder="${esc(path)}" data-has-children="${hasChildren ? "1" : "0"}" style="--tree-indent:${indent}px" title="${esc(root ? t("rootDirectory") : displayPath(path))}"${hasChildren ? ` aria-expanded="${collapsed ? "false" : "true"}"` : ""}>
+          <button class="admin-tree-item${currentFolder === path ? " is-active" : ""}${root ? " is-root" : ""}" type="button" data-folder="${esc(path)}" data-has-children="${hasChildren ? "1" : "0"}" style="--tree-indent:${indent}px" title="${esc(root ? t("rootDirectory") : displayPath(path))}"${hasChildren ? ` aria-expanded="${expanded ? "true" : "false"}"` : ""}>
             <span class="admin-tree-icon">${root ? rootIcon : folderIcon}</span>
-            <span class="admin-tree-caret${collapsed ? " is-collapsed" : ""}${hasChildren ? "" : " is-empty"}"${hasChildren ? ` data-tree-toggle="${esc(path)}"` : ""}>${hasChildren ? chevron : ""}</span>
+            <span class="admin-tree-caret${expanded ? "" : " is-collapsed"}${hasChildren ? "" : " is-empty"}"${hasChildren ? ` data-tree-toggle="${esc(path)}"` : ""}>${hasChildren ? chevron : ""}</span>
             <span class="admin-tree-name">${esc(name)}</span>
           </button>`;
       };
       const branch = (parent: string, depth: number): string => {
-        if (collapsedFolders.has(parent)) return "";
+        if (!expandedFolders.has(parent)) return "";
         return (children.get(parent) || []).map((path) => row(path, depth) + branch(path, depth + 1)).join("");
       };
       tree.innerHTML = row("/root", -1, true) + branch("/root", 0);
@@ -404,7 +409,7 @@ const loggedIn = await isAdmin(Astro.request, env);
           <td><span class="table-file">${typeIcon(item.kind)}<span>${esc(item.name)}</span></span></td>
           <td><a class="url-cell path-cell" href="${esc(visitorUrl(item.path))}" title="${esc(displayPath(item.path))}" target="_blank" rel="noreferrer">${esc(displayPath(item.path))}</a></td>
           <td><span class="type-chip">${esc(t(item.kind))}</span></td>
-          <td>${item.kind === "file" ? '<span class="url-cell">-</span>' : item.kind === "video" ? `<span class="type-chip">${item.sub ? "ASS" : "-"}${item.embeddedMulti ? " + H5" : ""}</span>` : item.lrc ? `<span class="type-chip">LRC${item.lrc2 ? " x2" : ""}</span>` : '<span class="url-cell">-</span>'}</td>
+          <td>${item.kind === "file" ? '<span class="url-cell">-</span>' : item.kind === "video" ? `<span class="type-chip">${item.sub ? "ASS" : "-"}${item.embeddedMulti ? ` + ${item.h5Player === "playsvideo" ? "PlaysVideo" : "Movi"}` : ""}</span>` : item.lrc ? `<span class="type-chip">LRC${item.lrc2 ? " x2" : ""}</span>` : '<span class="url-cell">-</span>'}</td>
           <td><a class="url-cell source-cell" href="${esc(item.url)}" title="${esc(item.url)}" target="_blank" rel="noreferrer">${esc(item.url)}</a></td>
           <td><span class="row-actions"><button class="icon-button danger-button" type="button" data-delete="${esc(item.id)}" title="${esc(t("delete"))}">${trash}<span class="sr-only">${esc(t("delete"))}</span></button></span></td>
         </tr>
@@ -476,6 +481,23 @@ const loggedIn = await isAdmin(Astro.request, env);
     const subField = document.querySelector<HTMLElement>("#subField");
     const embeddedMultiField = document.querySelector<HTMLElement>("#embeddedMultiField");
     const embeddedMulti = document.querySelector<HTMLInputElement>("#embeddedMultiToggle");
+    const h5PlayerChoices = [...document.querySelectorAll<HTMLInputElement>('input[name="h5Player"]')];
+    const syncH5PlayerChoices = (changed?: HTMLInputElement) => {
+      if (!embeddedMulti) return;
+      if (changed === embeddedMulti) {
+        if (!embeddedMulti.checked) h5PlayerChoices.forEach((choice) => (choice.checked = false));
+        else if (!h5PlayerChoices.some((choice) => choice.checked)) {
+          h5PlayerChoices.find((choice) => choice.value === "movi")!.checked = true;
+        }
+        return;
+      }
+      if (changed?.checked) {
+        h5PlayerChoices.forEach((choice) => {
+          if (choice !== changed) choice.checked = false;
+        });
+      }
+      embeddedMulti.checked = h5PlayerChoices.some((choice) => choice.checked);
+    };
     const lrcFields = document.querySelector<HTMLElement>("#lrcFields");
     const descriptionField = document.querySelector<HTMLElement>("#descriptionField");
     const bilingual = document.querySelector<HTMLInputElement>("#bilingualToggle");
@@ -493,7 +515,10 @@ const loggedIn = await isAdmin(Astro.request, env);
       descriptionField.hidden = !file;
       if (file) posterField.querySelector<HTMLInputElement>("input")!.value = "";
       if (kind.value !== "video") subField.querySelector<HTMLInputElement>("input")!.value = "";
-      if (kind.value !== "video") embeddedMulti.checked = false;
+      if (kind.value !== "video") {
+        embeddedMulti.checked = false;
+        h5PlayerChoices.forEach((choice) => (choice.checked = false));
+      }
       if (kind.value !== "audio") {
         lrcFields.querySelectorAll<HTMLInputElement>('input[type="url"]').forEach((input) => (input.value = ""));
         bilingual.checked = false;
@@ -509,7 +534,7 @@ const loggedIn = await isAdmin(Astro.request, env);
       const path = row?.dataset.folder;
       if (!row || !path) return;
       if (target.closest("[data-tree-toggle]") && row.dataset.hasChildren === "1") {
-        collapsedFolders.has(path) ? collapsedFolders.delete(path) : collapsedFolders.add(path);
+        expandedFolders.has(path) ? expandedFolders.delete(path) : expandedFolders.add(path);
         renderTree();
         return;
       }
@@ -537,6 +562,8 @@ const loggedIn = await isAdmin(Astro.request, env);
     document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => dialog?.close()));
     kind?.addEventListener("change", toggleFields);
     bilingual?.addEventListener("change", toggleFields);
+    embeddedMulti?.addEventListener("change", () => syncH5PlayerChoices(embeddedMulti));
+    h5PlayerChoices.forEach((choice) => choice.addEventListener("change", () => syncH5PlayerChoices(choice)));
     toggleFields();
 
     form?.addEventListener("submit", async (event) => {
@@ -546,7 +573,11 @@ const loggedIn = await isAdmin(Astro.request, env);
       const response = await fetch("/api/admin/links", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(new FormData(form).entries()))
+        body: JSON.stringify({
+          ...Object.fromEntries(new FormData(form).entries()),
+          embeddedMulti: Boolean(embeddedMulti?.checked),
+          h5Player: h5PlayerChoices.find((choice) => choice.checked)?.value || ""
+        })
       });
       const data = (await response.json()) as any;
       if (!data.ok) return set(status, data.details || data.error || t("createFailed"), "error");

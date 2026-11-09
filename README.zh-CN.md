@@ -47,7 +47,7 @@ npm install
 npm run local
 ```
 
-默认在 `127.0.0.1` 上提供 HTTP `80` 与 HTTPS `443` 端口服务，地址显示为 `soers.de5.net`。
+默认通过 HTTP 监听 `http://127.0.0.1:12067`；可通过 `RP_HTTP_PORT` 修改端口。Debian/Linux 下会关闭 Wrangler 交互式开发 UI。
 
 默认管理员密码为 `masteradmin`，手动打开 `/admin` 登录；设置环境变量 `P` 可修改密码。
 
@@ -119,13 +119,15 @@ D1 绑定名必须保持为 `DB`。
 | `C` | 与 `A` 同时播放的可选外部音频地址；设置后 `A` 视频静音 |
 | `N` | 网站名称 |
 | `P` | 管理员密码 |
+| `WM` | Movi 播放器字幕缩放倍率；默认 `0.78`（有效范围 `0.1`–`3`） |
+| `PBN` | 视频进度控制层玻璃背景透明度；默认 `0.12`（`0` 完全透明，`1` 不透明） |
 | `DB` | D1 绑定 |
 | `US` | Umami 脚本地址 |
 | `UI` | Umami 网站 ID |
 | `UH` | 可选 Umami 主机地址 |
 | `UD` | 可选 Umami 域名列表 |
 
-D1 可用时，RP 会在对应 `env:变量名` 键尚不存在时，将每个非空的已绑定短变量写入 `rp_settings`；后续部署优先读取数据库中的值。`keep_vars = true` 也会阻止 Wrangler 删除在 Cloudflare 控制台中配置的变量。
+D1 可用时，RP 会在对应 `env:变量名` 键尚不存在时，将非空的 `A`、`B`、`C`、`N`、`P`、`US`、`UI`、`UH` 和 `UD` 绑定写入 `rp_settings`；后续部署优先读取数据库中的值。`WM` 与 `PBN` 则直接读取运行时环境变量，不写入 D1，因此可直接调整而不受已保存设置覆盖。`keep_vars = true` 也会阻止 Wrangler 删除在 Cloudflare 控制台中配置的变量。
 
 ## 📖 功能详解
 
@@ -134,6 +136,8 @@ D1 可用时，RP 会在对应 `env:变量名` 键尚不存在时，将每个非
 添加视频时可填写公开 HTTP(S) `.ass` 字幕链接。RP 通过站内字幕接口读取字幕，避免浏览器 CORS 限制；播放器按字幕实际使用字符请求小型 Noto Sans 字体子集，字体服务不可用时回退到站内 SC/JP 字体。字幕来源仍需能被 Cloudflare Workers 访问。
 
 没有外置字幕的 MKV 视频，默认只读取第一条内置 ASS 字幕。管理后台的选项现改为 **H5 难以播放**：勾选后仅该视频改用 [movi-player](https://github.com/MrUjjwalG/movi-player)，在浏览器端读取 Matroska 内置轨道，并可在所有内置字幕之间切换；未勾选的视频仍使用原有 HTML5/JASSUB 处理方式。Movi 分支会将外置 ASS 转换为浏览器可用的 WebVTT，完整 ASS 样式仍由未勾选分支提供。Movi 依赖 HTTP Range 边下边播，媒体代理会保留上游的 `206 Partial Content` 响应并禁用媒体接口缓存。详见 Cloudflare 的 [Range 行为文档](https://developers.cloudflare.com/cache/reference/range-requests/) 与 [Workers Cache 限制](https://developers.cloudflare.com/workers/cache/limitations/)：Workers Cache 不会存储 Worker 直接返回的 `206`，因此不要为了缓存强制改成伪造的 `200`，否则可能破坏 Range 播放。
+
+设置 `WM` 可调整 Movi 字幕缩放倍率（默认 `0.78`，有效范围 `0.1`–`3`）；设置 `PBN` 可调整视频进度控制层的玻璃背景透明度（默认 `0.12`，`0` 完全透明，`1` 不透明）。
 
 ### LRC 歌词
 

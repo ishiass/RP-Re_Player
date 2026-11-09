@@ -1,5 +1,3 @@
-import http from "node:http";
-import https from "node:https";
 import { spawn } from "node:child_process";
 
 const ip = process.argv[2] || "127.0.0.1";
@@ -8,22 +6,27 @@ if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
   process.exit(1);
 }
 
-const h = (() => {
-  if (ip === "127.0.0.1") return "soers.de5.net";
-  const p = ip.split(".");
-  const n = Number(p[3]);
-  if (n >= 0 && n <= 9 && p.slice(0, 3).join(".") === "127.0.0") return `2${n}.soers.de5.net`;
-  if (n >= 0 && n <= 9 && p.slice(0, 3).join(".") === "172.0.0") return `7${n}.soers.de5.net`;
-  return ip;
-})();
+function portFromEnvironment(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error(`${name} must be an integer from 1 to 65535.`);
+    process.exit(1);
+  }
+  return port;
+}
+
+const port = portFromEnvironment("RP_HTTP_PORT", 12067);
 
 const a = [
   "wrangler", "dev",
   "--config", "dist/server/wrangler.json",
   "--ip", ip,
-  "--port", "443",
-  "--local-protocol", "https",
-  "--inspector-port", "9231"
+  "--port", String(port),
+  "--local-protocol", "http",
+  "--inspector-port", "9231",
+  "--show-interactive-dev-session=false"
 ];
 const w = spawn(process.platform === "win32" ? "npx.cmd" : "npx", a, {
   cwd: process.cwd(),
@@ -32,38 +35,17 @@ const w = spawn(process.platform === "win32" ? "npx.cmd" : "npx", a, {
   stdio: "inherit"
 });
 
-const s = http.createServer((req, res) => {
-  const q = https.request({
-    hostname: "127.0.0.1",
-    port: 443,
-    path: req.url,
-    method: req.method,
-    headers: req.headers,
-    rejectUnauthorized: false
-  }, (upstream) => {
-    res.writeHead(upstream.statusCode || 502, upstream.headers);
-    upstream.pipe(res);
-  });
-  q.on("error", () => {
-    if (!res.headersSent) res.writeHead(503, { "content-type": "text/plain; charset=utf-8", "retry-after": "1" });
-    res.end("Re Player is starting. Refresh in a moment.");
-  });
-  req.pipe(q);
-});
-
-s.listen(80, ip, () => {
-  console.log("");
-  console.log(`Re Player HTTP : http://${h}`);
-  console.log(`Re Player HTTPS: https://${h}`);
-  console.log(`Listening      : ${ip}:80, ${ip}:443`);
-  console.log("");
-});
+console.log("");
+console.log(`Re Player      : http://${ip}:${port}`);
+console.log(`Listening      : ${ip}:${port}`);
+console.log("");
 
 let closing = false;
+let exitCode = 0;
 function close(code = 0) {
   if (closing) return;
   closing = true;
-  s.close(() => process.exit(code));
+  exitCode = code;
   if (!w.killed) {
     if (process.platform === "win32" && w.pid) {
       spawn("taskkill", ["/pid", String(w.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
@@ -76,8 +58,11 @@ function close(code = 0) {
 
 w.on("error", (error) => {
   console.error(error.message);
-  close(1);
+  process.exit(1);
 });
-w.on("exit", (code) => close(code || 0));
+w.on("exit", (code) => {
+  if (closing) return process.exit(exitCode);
+  process.exit(code || 0);
+});
 process.on("SIGINT", () => close(0));
 process.on("SIGTERM", () => close(0));

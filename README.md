@@ -47,7 +47,7 @@ npm install
 npm run local
 ```
 
-By default the service listens on `127.0.0.1`, serving HTTP port `80` and HTTPS port `443`, displayed as `soers.de5.net`.
+By default the service listens at `http://127.0.0.1:12067` over HTTP. Override the port with `RP_HTTP_PORT` if needed. On Debian/Linux, Wrangler's interactive dev UI is disabled.
 
 The default administrator password is `masteradmin`. Open `/admin` manually to sign in; set the environment variable `P` to change the password.
 
@@ -119,13 +119,15 @@ The D1 binding name must remain `DB`.
 | `C` | Optional external audio URL played together with `A`; mutes the `A` video when set |
 | `N` | Site name |
 | `P` | Administrator password |
+| `WM` | Movi subtitle size multiplier; default `0.78` (accepted range `0.1`–`3`) |
+| `PBN` | Video control bar glass background opacity; default `0.12` (`0` transparent, `1` opaque) |
 | `DB` | D1 binding |
 | `US` | Umami script URL |
 | `UI` | Umami website ID |
 | `UH` | Optional Umami host URL |
 | `UD` | Optional Umami domain list |
 
-When D1 is available, RP copies each non-empty bound short variable into `rp_settings` the first time its `env:VARIABLE` key is missing; stored values take priority on later deployments. `keep_vars = true` also prevents Wrangler from deleting variables configured in the Cloudflare dashboard.
+When D1 is available, RP seeds `rp_settings` from non-empty `A`, `B`, `C`, `N`, `P`, `US`, `UI`, `UH`, and `UD` bindings when their `env:VARIABLE` keys are missing; stored values take priority on later deployments. `WM` and `PBN` are read directly from the runtime environment and are not stored in D1, so they can be adjusted there without changing saved settings. `keep_vars = true` also prevents Wrangler from deleting variables configured in the Cloudflare dashboard.
 
 ## 📖 Details
 
@@ -134,6 +136,8 @@ When D1 is available, RP copies each non-empty bound short variable into `rp_set
 When adding a video, enter a public HTTP(S) URL to an `.ass` subtitle file. RP fetches the configured subtitle through its own public subtitle endpoint, avoiding ordinary browser CORS restrictions. The player requests small Noto Sans subsets for the characters used by each subtitle; bundled SC/JP fonts remain as a fallback when the font service is unavailable. The subtitle source must still be reachable from Cloudflare Workers.
 
 MKV files without an external subtitle use the first embedded ASS track by default. Enabling **H5 difficult playback** in the admin console switches only that video to [movi-player](https://github.com/MrUjjwalG/movi-player), which reads the Matroska tracks in the browser and provides a subtitle selector for all embedded tracks. Videos with the option disabled continue using the existing native HTML5/JASSUB path. External ASS subtitles in the Movi path are converted to browser-compatible WebVTT; full ASS styling remains available on the native path. Movi uses HTTP Range requests for progressive loading, so the media proxy preserves upstream `206 Partial Content` responses and disables caching for the media endpoint. See Cloudflare's [Range request behavior](https://developers.cloudflare.com/cache/reference/range-requests/) and [Workers Cache limitations](https://developers.cloudflare.com/workers/cache/limitations/): Workers Cache does not store a Worker response that is already `206`, so do not force this endpoint to return a synthetic `200`.
+
+Set `WM` to change the Movi subtitle size multiplier (default `0.78`, accepted range `0.1`–`3`). Set `PBN` to change the video control bar's glass background opacity (default `0.12`; `0` is transparent and `1` is opaque).
 
 ### LRC Lyrics
 

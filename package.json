@@ -21,7 +21,13 @@
     "ebml": "^3.0.0",
     "jassub": "^2.5.7",
     "movi-player": "0.4.1",
+    "playsvideo": "0.4.7",
     "typescript": "latest"
+  },
+  "overrides": {
+    "playsvideo": {
+      "mediabunny": "https://codeload.github.com/kzahel/mediabunny/tar.gz/cd3cd2beb9c122dfa6fa89edbd7a73f2fa9df7a0"
+    }
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",

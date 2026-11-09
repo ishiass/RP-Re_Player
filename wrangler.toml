@@ -6,3 +6,8 @@ keep_vars = true
 binding = "DB"
 database_name = "re-play"
 database_id = ""
+
+# Create a KV namespace and replace this ID before deploying the migration version.
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

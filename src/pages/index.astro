@@ -32,6 +32,13 @@ if (Astro.url.pathname === "/") return Astro.redirect("/Re", 302);
 
 const env = await getEnv(Astro);
 const visitorTheme = await getVisitorTheme(env);
+const boundedEnvNumber = (input: string | undefined, fallback: number, min: number, max: number) => {
+  if (!input?.trim()) return fallback;
+  const value = Number(input);
+  return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+};
+const moviSubtitleSize = boundedEnvNumber(env.WM, 0.78, 0.1, 3);
+const playerGlassOpacity = boundedEnvNumber(env.PBN, 0.12, 0, 1);
 const externalUrl = (input?: string) => {
   const value = input?.trim();
   if (!value) return "";
@@ -231,9 +238,10 @@ const introMaxSeconds = (() => {
               theme="light"
               subtitlesize="0.67"
               subtitlecolor="#CCFFFF"
+              style={`--movi-subtitle-size: ${moviSubtitleSize};`}
               fallback="native"
             ></movi-player>
-            <div id="videoControls" class="video-controls">
+            <div id="videoControls" class="video-controls" style={`--player-glass-opacity: ${playerGlassOpacity};`}>
               <label class="video-seek">
                 <span class="sr-only" data-i18n="seek">Seek</span>
                 <input id="videoSeek" type="range" min="0" max="0" value="0" step="0.1" aria-label="Seek" />
@@ -374,10 +382,9 @@ const introMaxSeconds = (() => {
   <template id="iconFile"><File size={20} /></template>
 
   <script>
-    import JASSUB from "jassub";
-    import "movi-player/element";
-    import type { MoviElement, SubtitleTrack as MoviSubtitleTrack } from "movi-player/element";
-    import { Decoder as EbmlDecoder } from "ebml/lib/ebml.esm.js";
+    import type JASSUB from "jassub";
+    import type { MoviElement, SubtitleRenderer as MoviSubtitleRenderer, SubtitleTrack as MoviSubtitleTrack } from "movi-player/element";
+    import type { PlaysVideoEngine, SubtitleTrackInfo as PlaysVideoSubtitleTrack } from "playsvideo";
     import { buildLyrics, type LyricCue, type LyricWord } from "../lib/lrc";
     import { publicCoverPath } from "../lib/pseudo";
     import { parentPseudoPath, pseudoPathFromVisitorUrl, visitorUrl } from "../lib/visitor-route";
@@ -565,6 +572,7 @@ const introMaxSeconds = (() => {
       poster?: string;
       sub?: string;
       embeddedMulti?: boolean;
+      h5Player?: "playsvideo" | "movi";
       lrc?: string;
       lrc2?: string;
       isDir?: boolean;
@@ -580,8 +588,13 @@ const introMaxSeconds = (() => {
       lang: Lang;
       ass: JASSUB | null;
       moviActive: boolean;
+      playsVideoActive: boolean;
+      playsVideoEngine: PlaysVideoEngine | null;
       moviSubtitleTracks: MoviSubtitleTrack[];
+      moviSubtitleFonts: Uint8Array[];
+      moviSubtitleRenderer: MoviAssRenderer | null;
       moviExternalSubtitle: string | null;
+      externalSubtitleRaw: string | null;
       moviExternalObjectUrl: string | null;
       subtitleSelection: SubtitleSelection;
       lyrics: LyricCue[];
@@ -601,8 +614,13 @@ const introMaxSeconds = (() => {
       lang: "en",
       ass: null,
       moviActive: false,
+      playsVideoActive: false,
+      playsVideoEngine: null,
       moviSubtitleTracks: [],
+      moviSubtitleFonts: [],
+      moviSubtitleRenderer: null,
       moviExternalSubtitle: null,
+      externalSubtitleRaw: null,
       moviExternalObjectUrl: null,
       subtitleSelection: "off",
       lyrics: [],
@@ -703,7 +721,7 @@ const introMaxSeconds = (() => {
       style.textContent = `
         .movi-subtitle-overlay {
           --movi-sub-bottom: 2% !important;
-          --movi-sub-size-mult: 0.78 !important;
+          --movi-sub-size-mult: var(--movi-subtitle-size, 0.78) !important;
         }
         .movi-subtitle-anchor {
           width: 100% !important;
@@ -733,6 +751,8 @@ const introMaxSeconds = (() => {
     let statPlayed = false;
     let statProgress = 0;
     let progressStamp = 0;
+    let lastProgressPath = "";
+    let lastProgressTime = -1;
     const cookie = {
       get(name: string) {
         const value = document.cookie.split("; ").find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
@@ -793,18 +813,22 @@ const introMaxSeconds = (() => {
       const media = activeMedia();
       if (!media || !s.current || !Number.isFinite(media.currentTime)) return;
       const now = Date.now();
-      if (!force && now - progressStamp < 5000) return;
-      progressStamp = now;
+      const currentTime = Math.max(0, media.currentTime);
+      if (!force && now - progressStamp < 1000) return;
+      if (!force && lastProgressPath === s.current.path && Math.abs(currentTime - lastProgressTime) < 0.01) return;
       const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : undefined;
       const ended = Boolean(duration && (complete || media.ended || duration - media.currentTime <= 3));
       if (!ended && media.currentTime <= 0) return;
       const value: SavedProgress = {
         p: s.current.path,
-        t: Math.round((ended && duration ? duration : media.currentTime) * 10) / 10
+        t: Math.round((ended && duration ? duration : currentTime) * 100) / 100
       };
-      if (duration) value.d = Math.round(duration * 10) / 10;
+      if (duration) value.d = Math.round(duration * 100) / 100;
       if (ended) value.e = 1;
       cookie.set(progressKey(s.current.path), JSON.stringify(value));
+      progressStamp = now;
+      lastProgressPath = s.current.path;
+      lastProgressTime = currentTime;
       if (value.t > 0) markLibraryItemPlayed(s.current.path);
     }
 
@@ -909,6 +933,7 @@ const introMaxSeconds = (() => {
       if (mode === "replace") history.replaceState(state, "", next);
       else history.pushState(state, "", next);
     }
+    const isFileRoute = (path: string) => /\.[a-z0-9]{1,12}$/i.test(path.split("/").pop() || "");
     const subtitleFontUrls = async (content: string, externalSignal?: AbortSignal) => {
       const characters = [...new Set([...content].filter((character) => {
         const point = character.codePointAt(0) || 0;
@@ -1566,6 +1591,7 @@ const introMaxSeconds = (() => {
       subtitleAbortController?.abort();
       subtitleAbortController = null;
       await destroyVideoSubtitle();
+      destroyPlaysVideo();
       destroyMoviVideo();
       s.moviSubtitleTracks = [];
       s.subtitleSelection = "off";
@@ -1625,15 +1651,42 @@ const introMaxSeconds = (() => {
       if (ass) await ass.destroy().catch(() => undefined);
     }
 
-    function destroyMoviVideo() {
+    function destroyPlaysVideo() {
+      const engine = s.playsVideoEngine;
+      s.playsVideoEngine = null;
+      s.playsVideoActive = false;
+      engine?.destroy();
+    }
+
+    function releaseMoviSource() {
       d.movi.pause();
+      d.movi.setSubtitleRenderer(null);
       d.movi.src = null;
       s.moviActive = false;
-      s.moviSubtitleTracks = [];
-      s.moviExternalSubtitle = null;
       if (s.moviExternalObjectUrl) URL.revokeObjectURL(s.moviExternalObjectUrl);
       s.moviExternalObjectUrl = null;
+    }
+
+    function destroyMoviVideo() {
+      releaseMoviSource();
+      s.moviSubtitleTracks = [];
+      s.moviSubtitleFonts = [];
+      s.moviSubtitleRenderer = null;
+      s.moviExternalSubtitle = null;
+      s.externalSubtitleRaw = null;
       d.videoFrame.dataset.backend = "native";
+    }
+
+    function setMoviAssRenderer(track: MoviSubtitleTrack | undefined) {
+      if (!isAssMoviTrack(track)) {
+        d.movi.setSubtitleRenderer(null);
+        s.moviSubtitleRenderer = null;
+        return;
+      }
+      if (!s.moviSubtitleRenderer) {
+        s.moviSubtitleRenderer = new MoviAssRenderer(s.moviSubtitleFonts);
+        d.movi.setSubtitleRenderer(s.moviSubtitleRenderer);
+      }
     }
 
     function subtitleTrackLabel(track: MoviSubtitleTrack, index: number) {
@@ -1689,12 +1742,14 @@ const introMaxSeconds = (() => {
       const player = d.movi.player;
       if (!player) return false;
       if (s.subtitleSelection === "off") {
+        setMoviAssRenderer(undefined);
         await player.selectSubtitleTrack(null);
         if (s.moviExternalSubtitle) await player.selectSubtitleLang(null);
         renderSubtitleOptions();
         return true;
       }
       if (s.subtitleSelection === "external") {
+        setMoviAssRenderer(undefined);
         const selected = s.moviExternalSubtitle
           ? await player.selectSubtitleLang(s.moviExternalSubtitle)
           : false;
@@ -1703,11 +1758,79 @@ const introMaxSeconds = (() => {
       }
       const id = embeddedSubtitleIndex(s.subtitleSelection);
       if (s.moviExternalSubtitle) await player.selectSubtitleLang(null);
+      const track = s.moviSubtitleTracks.find((candidate) => candidate.id === id);
+      setMoviAssRenderer(track);
       const selected = id >= 0 && s.moviSubtitleTracks.some((track) => track.id === id)
         ? await player.selectSubtitleTrack(id)
         : false;
       renderSubtitleOptions();
       return selected;
+    }
+
+    function normalizedSubtitleLabel(value: string | null | undefined) {
+      return String(value || "").trim().toLocaleLowerCase().replace(/[\s._-]+/g, "");
+    }
+
+    function normalizeSubtitleLanguage(value: string | null | undefined) {
+      const language = String(value || "").trim().toLocaleLowerCase().split(/[-_]/)[0];
+      return ({ chi: "zho", cmn: "zho", eng: "en", jpn: "ja" } as Record<string, string>)[language] || language;
+    }
+
+    function playsVideoTextTrack(moviTrack: MoviSubtitleTrack) {
+      const engine = s.playsVideoEngine;
+      if (!engine) return undefined;
+      const infos = engine.subtitleTracks;
+      const targetName = normalizedSubtitleLabel(moviTrack.label);
+      const targetLanguage = normalizeSubtitleLanguage(moviTrack.language);
+      let info: PlaysVideoSubtitleTrack | undefined;
+      if (targetName) {
+        info = infos.find((candidate) => normalizedSubtitleLabel(candidate.name) === targetName &&
+          (!targetLanguage || normalizeSubtitleLanguage(candidate.language) === targetLanguage));
+      }
+      if (!info && targetLanguage) {
+        info = infos.find((candidate) => normalizeSubtitleLanguage(candidate.language) === targetLanguage &&
+          (!moviTrack.codec || candidate.codec.toLocaleLowerCase().includes(moviTrack.codec.toLocaleLowerCase())));
+      }
+      if (!info) {
+        const moviIndex = s.moviSubtitleTracks.indexOf(moviTrack);
+        info = infos[moviIndex];
+      }
+      if (!info) return undefined;
+
+      const textTracks = Array.from(d.video.textTracks).filter((track) =>
+        track.kind === "subtitles" || track.kind === "captions"
+      );
+      const infoName = normalizedSubtitleLabel(info.name);
+      const textTrack = textTracks.find((track) =>
+        normalizeSubtitleLanguage(track.language) === normalizeSubtitleLanguage(info!.language) &&
+        infoName && normalizedSubtitleLabel(track.label).includes(infoName)
+      );
+      return textTrack || textTracks[infos.indexOf(info)];
+    }
+
+    async function applyPlaysVideoSubtitle(request: number, route: number, signal: AbortSignal) {
+      if (!isCurrentItemLoad(request, route, signal) || !s.playsVideoActive) return false;
+      await destroyVideoSubtitle();
+      const tracks = Array.from(d.video.textTracks);
+      tracks.forEach((track) => (track.mode = "disabled"));
+      if (s.subtitleSelection === "off") return true;
+      if (s.subtitleSelection === "external") {
+        if (!s.externalSubtitleRaw?.trim()) return false;
+        await installVideoSubtitle(s.externalSubtitleRaw, request, route, signal);
+        return true;
+      }
+      const id = embeddedSubtitleIndex(s.subtitleSelection);
+      const moviTrack = s.moviSubtitleTracks.find((track) => track.id === id);
+      const textTrack = moviTrack ? playsVideoTextTrack(moviTrack) : undefined;
+      if (!textTrack) return false;
+      textTrack.mode = "showing";
+      return true;
+    }
+
+    async function applySelectedVideoSubtitle(request: number, route: number, signal: AbortSignal) {
+      return s.playsVideoActive
+        ? applyPlaysVideoSubtitle(request, route, signal)
+        : applyMoviSubtitle(request, route, signal);
     }
 
     function renderSubtitleOptions() {
@@ -1753,7 +1876,9 @@ const introMaxSeconds = (() => {
       const subContent = normalizeAssFonts(rawSubtitle, "Noto Sans SC");
       let ass: JASSUB | null = null;
       try {
-        ass = new JASSUB({
+        const { default: JASSUBModule } = await import("jassub");
+        if (!isCurrentItemLoad(request, route, signal)) return;
+        ass = new JASSUBModule({
           video: d.video,
           subContent
         });
@@ -1805,6 +1930,218 @@ const introMaxSeconds = (() => {
       return `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}.${String(centiseconds % 100).padStart(2, "0")}`;
     }
 
+    function writeEbmlBytes(decoder: unknown, bytes: Uint8Array) {
+      const parts: string[] = [];
+      const blockSize = 0x8000;
+      for (let offset = 0; offset < bytes.length; offset += blockSize) {
+        parts.push(String.fromCharCode(...bytes.subarray(offset, offset + blockSize)));
+      }
+      (decoder as { write(chunk: string, encoding: "binary"): unknown }).write(parts.join(""), "binary");
+    }
+
+    function isAssMoviTrack(track: MoviSubtitleTrack | null | undefined) {
+      return Boolean(track && /(?:ass|ssa)/i.test(track.codec));
+    }
+
+    class MoviAssRenderer implements MoviSubtitleRenderer {
+      private overlay: HTMLElement | null = null;
+      private canvas: HTMLCanvasElement | null = null;
+      private ass: JASSUB | null = null;
+      private fonts: Uint8Array[];
+      private generation = 0;
+      private packetQueue: Promise<void> = Promise.resolve();
+      private delay = 0;
+
+      constructor(fonts: Uint8Array[]) {
+        this.fonts = fonts;
+      }
+
+      mount(container: HTMLElement) {
+        this.overlay = container;
+        if (this.canvas && this.canvas.parentElement !== container) container.appendChild(this.canvas);
+      }
+
+      async configure(track: MoviSubtitleTrack, extradata?: Uint8Array, fonts?: Uint8Array[]) {
+        const generation = ++this.generation;
+        const previous = this.ass;
+        this.ass = null;
+        await this.packetQueue.catch(() => undefined);
+        if (previous) await previous.destroy().catch(() => undefined);
+        if (generation !== this.generation) return;
+        this.canvas?.remove();
+        this.canvas = null;
+        if (!isAssMoviTrack(track) || !this.overlay) return;
+
+        const bytes = extradata || track.extradata;
+        let header = bytes ? new TextDecoder().decode(bytes) : "";
+        header = header.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+        if (!header) {
+          header = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1920",
+            "PlayResY: 1080",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Default,Noto Sans SC,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,20,20,30,1"
+          ].join("\n");
+        }
+        if (!/^\s*\[Events\]/im.test(header)) {
+          header += "\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text";
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.setAttribute("aria-hidden", "true");
+        canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+        this.overlay.appendChild(canvas);
+        this.canvas = canvas;
+        const { default: JASSUBModule } = await import("jassub");
+        if (generation !== this.generation || !this.overlay) {
+          if (this.canvas === canvas) {
+            canvas.remove();
+            this.canvas = null;
+          }
+          return;
+        }
+        const ass = new JASSUBModule({
+          canvas,
+          subContent: header,
+          fonts: [...this.fonts, ...(fonts || [])],
+          availableFonts: { "Noto Sans SC": "/fonts/NotoSansSC-Regular.woff2" },
+          defaultFont: "Noto Sans SC",
+          queryFonts: "local"
+        });
+        this.ass = ass;
+        await ass.ready;
+        if (generation !== this.generation || this.ass !== ass) {
+          await ass.destroy().catch(() => undefined);
+          return;
+        }
+        this.setDelay(this.delay);
+      }
+
+      pushPacket(packet: Parameters<MoviSubtitleRenderer["pushPacket"]>[0]) {
+        const ass = this.ass;
+        const generation = this.generation;
+        if (!ass || !packet.data.length) return;
+        this.packetQueue = this.packetQueue.then(async () => {
+          await ass.ready;
+          if (this.ass !== ass || generation !== this.generation) return;
+          const fields = new TextDecoder().decode(packet.data).replace(/\0+$/, "").split(",");
+          if (fields.length < 9) return;
+          const start = Math.max(0, packet.timestamp);
+          const duration = packet.duration > 0 ? packet.duration : 3;
+          const end = Math.max(start + 0.01, start + duration);
+          const dialogue = `Dialogue: ${fields[1]},${assTime(start)},${assTime(end)},${fields.slice(2).join(",")}`;
+          await ass.renderer.processData(dialogue);
+        }).catch((error) => console.warn("Could not pass an embedded ASS subtitle packet to JASSUB.", error));
+        return this.packetQueue;
+      }
+
+      render(mediaTime: number, videoWidth: number, videoHeight: number) {
+        if (!this.ass || videoWidth <= 0 || videoHeight <= 0) return;
+        return this.ass.manualRender({
+          expectedDisplayTime: performance.now(),
+          width: videoWidth,
+          height: videoHeight,
+          mediaTime
+        });
+      }
+
+      setDelay(seconds: number) {
+        this.delay = Number.isFinite(seconds) ? seconds : 0;
+        if (this.ass) this.ass.timeOffset = -this.delay;
+      }
+
+      clear() {
+        // Keep parsed events across seeks so JASSUB can render cues when seeking backward.
+      }
+
+      async destroy() {
+        this.generation += 1;
+        const ass = this.ass;
+        this.ass = null;
+        await this.packetQueue.catch(() => undefined);
+        if (ass) await ass.destroy().catch(() => undefined);
+        this.canvas?.remove();
+        this.canvas = null;
+        this.overlay = null;
+        this.fonts = [];
+      }
+    }
+
+    async function extractMkvFonts(url: string, signal: AbortSignal) {
+      const { Decoder } = await import("ebml/lib/ebml.esm.js");
+      const decoder = new Decoder();
+      const fonts: Uint8Array[] = [];
+      const maxScanBytes = 12 * 1024 * 1024;
+      const rangeSize = 1024 * 1024;
+      const maxFontBytes = 16 * 1024 * 1024;
+      const maxTotalFontBytes = 32 * 1024 * 1024;
+      let totalFontBytes = 0;
+      let currentAttachment: { name: string; mime: string; data: Uint8Array | null } | null = null;
+      let attachmentsSeen = false;
+      let scanComplete = false;
+      let decoderError: unknown = null;
+
+      decoder.on("error", (error: unknown) => {
+        decoderError = error;
+      });
+      decoder.on("data", (entry: [string, Record<string, any>]) => {
+        const [kind, tag] = entry;
+        if (tag.name === "Attachments" && kind === "start") attachmentsSeen = true;
+        if (tag.name === "Cluster" && kind === "start" && !attachmentsSeen) scanComplete = true;
+        if (tag.name === "AttachedFile" && kind === "start") {
+          currentAttachment = { name: "", mime: "", data: null };
+          return;
+        }
+        if (tag.name === "AttachedFile" && kind === "end" && currentAttachment) {
+          if (currentAttachment.data) {
+            fonts.push(currentAttachment.data);
+            totalFontBytes += currentAttachment.data.byteLength;
+          }
+          currentAttachment = null;
+          return;
+        }
+        if (tag.name === "Attachments" && kind === "end") {
+          scanComplete = true;
+          return;
+        }
+        if (!currentAttachment || kind !== "tag") return;
+        if (tag.name === "FileName") currentAttachment.name = String(tag.value || "");
+        else if (tag.name === "FileMimeType") currentAttachment.mime = String(tag.value || "");
+        else if (tag.name === "FileData") {
+          const isFont = /\.(?:ttf|otf|ttc|otc|woff2?)$/i.test(currentAttachment.name) || /font|opentype/i.test(currentAttachment.mime);
+          const data = tag.data;
+          if (isFont && data instanceof Uint8Array && data.byteLength > 0 && data.byteLength <= maxFontBytes && totalFontBytes + data.byteLength <= maxTotalFontBytes) {
+            currentAttachment.data = new Uint8Array(data);
+          }
+        }
+      });
+
+      for (let offset = 0; offset < maxScanBytes && !scanComplete && !signal.aborted; offset += rangeSize) {
+        const rangeEnd = Math.min(offset + rangeSize - 1, maxScanBytes - 1);
+        const response = await fetch(url, {
+          headers: { range: `bytes=${offset}-${rangeEnd}` },
+          cache: "no-store",
+          signal
+        });
+        const contentRange = response.headers.get("content-range") || "";
+        const rangeMatch = contentRange.match(/^bytes\s+(\d+)-(\d+)\//i);
+        if (response.status !== 206 || !rangeMatch || Number(rangeMatch[1]) !== offset) {
+          await response.body?.cancel().catch(() => undefined);
+          break;
+        }
+        const chunk = new Uint8Array(await response.arrayBuffer());
+        if (!chunk.length) break;
+        writeEbmlBytes(decoder, chunk);
+        if (decoderError) throw decoderError;
+        if (chunk.byteLength < rangeEnd - offset + 1) break;
+      }
+      if (decoderError) throw decoderError;
+      return fonts;
+    }
+
     async function parseEmbeddedVideoSubtitles(
       item: MediaItem,
       request: number,
@@ -1812,7 +2149,10 @@ const introMaxSeconds = (() => {
       signal: AbortSignal
     ): Promise<EmbeddedSubtitle[]> {
       if (!/\.mkv(?:$|[?#])/i.test(`${item.name} ${item.path}`) || !item.url) return [];
-      const response = await fetch(item.url, { signal });
+      const [response, { Decoder }] = await Promise.all([
+        fetch(item.url, { signal }),
+        import("ebml/lib/ebml.esm.js")
+      ]);
       if (!response.ok || !response.body) return [];
       if (!isCurrentItemLoad(request, route, signal)) return [];
 
@@ -1820,7 +2160,7 @@ const introMaxSeconds = (() => {
       type Cue = { track: number; at: number; duration: number; payload: string };
       const tracks = new Map<number, Track>();
       const cues: Cue[] = [];
-      const decoder = new EbmlDecoder();
+      const decoder = new Decoder();
       let scale = 1_000_000;
       let clusterTime = 0;
       let currentTrack: Partial<Track> | null = null;
@@ -1878,7 +2218,7 @@ const introMaxSeconds = (() => {
           const { done, value } = await reader.read();
           if (done) break;
           if (!isCurrentItemLoad(request, route, signal)) return [];
-          decoder.write(value);
+          writeEbmlBytes(decoder, value);
           if (decoderError) throw decoderError;
         }
       } finally {
@@ -1933,11 +2273,50 @@ const introMaxSeconds = (() => {
       return true;
     }
 
+    async function loadPlaysVideo(item: MediaItem, request: number, route: number, signal: AbortSignal) {
+      const { PlaysVideoEngine: Engine } = await import("playsvideo");
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      const engine = new Engine(d.video, { embeddedSubtitlePolicy: "off" });
+      s.playsVideoEngine = engine;
+      s.playsVideoActive = true;
+      const ready = new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => signal.removeEventListener("abort", onAbort);
+        const finish = (callback: () => void) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          callback();
+        };
+        const onAbort = () => finish(() => reject(new DOMException("Video loading was aborted.", "AbortError")));
+        engine.addEventListener("ready", () => finish(resolve), { once: true });
+        engine.addEventListener("error", (event) => finish(() => reject(new Error(event.detail.message))), { once: true });
+        engine.addEventListener("subtitle-status", () => {
+          if (!s.playsVideoActive || !s.subtitleSelection.startsWith("embedded:")) return;
+          applyPlaysVideoSubtitle(request, route, signal).catch(() => undefined);
+        });
+        signal.addEventListener("abort", onAbort, { once: true });
+        try {
+          engine.loadUrl(item.url!);
+        } catch (error) {
+          finish(() => reject(error));
+        }
+      });
+      await ready;
+      return isCurrentItemLoad(request, route, signal);
+    }
+
     async function loadMoviVideo(item: MediaItem, request: number, route: number, signal: AbortSignal) {
       if (!item.url) throw new Error(t("playFailed"));
+      const backend = item.h5Player === "playsvideo" ? "playsvideo" : "movi";
+      await import("movi-player/element");
+      if (!isCurrentItemLoad(request, route, signal)) return false;
       s.moviActive = true;
+      s.playsVideoActive = false;
       s.moviSubtitleTracks = [];
+      s.moviSubtitleFonts = [];
       s.moviExternalSubtitle = null;
+      s.externalSubtitleRaw = null;
       d.videoFrame.dataset.backend = "movi";
       d.video.hidden = true;
       d.movi.hidden = false;
@@ -1978,10 +2357,23 @@ const introMaxSeconds = (() => {
       const player = d.movi.player;
       if (!player) throw new Error(t("playFailed"));
       s.moviSubtitleTracks = player.getSubtitleTracks().slice();
+      if (backend === "movi" && s.moviSubtitleTracks.some(isAssMoviTrack)) {
+        try {
+          s.moviSubtitleFonts = await extractMkvFonts(item.url, signal);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          console.warn("Could not read embedded MKV font attachments; using the subtitle fallback font.", error);
+        }
+      }
+      if (!isCurrentItemLoad(request, route, signal)) return false;
       try {
-        if (item.sub) await loadMoviExternalSubtitle(item, signal);
+        if (item.sub && backend === "movi") await loadMoviExternalSubtitle(item, signal);
+        else if (item.sub) {
+          s.externalSubtitleRaw = await loadExternalVideoSubtitle(item, signal);
+          if (s.externalSubtitleRaw?.trim()) s.moviExternalSubtitle = "external-ass";
+        }
       } catch {
-        console.warn("Could not load external video subtitle into Movi Player.");
+        console.warn(`Could not load external video subtitle for ${backend}.`);
       }
       if (!isCurrentItemLoad(request, route, signal)) return false;
       if (s.moviExternalSubtitle) {
@@ -1990,9 +2382,25 @@ const introMaxSeconds = (() => {
         s.subtitleSelection = s.moviSubtitleTracks[0] ? `embedded:${s.moviSubtitleTracks[0].id}` : "off";
       }
       renderSubtitleOptions();
-      await applyMoviSubtitle(request, route, signal);
+      if (backend === "playsvideo") {
+        releaseMoviSource();
+        d.movi.hidden = true;
+        d.video.hidden = false;
+        d.videoFrame.dataset.backend = "playsvideo";
+        const ready = await loadPlaysVideo(item, request, route, signal);
+        if (!ready) return false;
+        renderSubtitleOptions();
+        await applySelectedVideoSubtitle(request, route, signal);
+        return await startVideoPlayback(request, route, signal);
+      }
+      await applySelectedVideoSubtitle(request, route, signal);
       return await startVideoPlayback(request, route, signal);
     }
+
+    d.video.textTracks.addEventListener("addtrack", () => {
+      if (!s.playsVideoActive || !s.subtitleSelection.startsWith("embedded:") || !subtitleAbortController) return;
+      applyPlaysVideoSubtitle(itemRequest, routeRequest, subtitleAbortController.signal).catch(() => undefined);
+    });
 
     d.movi.addEventListener("trackschange", () => {
       if (!s.moviActive || !s.current?.embeddedMulti || !d.movi.player) return;
@@ -2020,7 +2428,7 @@ const introMaxSeconds = (() => {
       s.subtitleSelection = selection;
       renderSubtitleOptions();
       try {
-        await applyMoviSubtitle(request, route, signal);
+        await applySelectedVideoSubtitle(request, route, signal);
         if (isCurrentItemLoad(request, route, signal)) setStatus(d.playerStatus, t("playing"));
       } catch (error) {
         if (isCurrentItemLoad(request, route, signal)) {
@@ -2236,7 +2644,10 @@ const introMaxSeconds = (() => {
       saveProgress();
       recordProgress(d.audio);
     });
-    d.audio.addEventListener("seeked", () => syncLyrics(true));
+    d.audio.addEventListener("seeked", () => {
+      syncLyrics(true);
+      saveProgress(true);
+    });
     ["play", "pause", "durationchange", "loadedmetadata", "volumechange"].forEach((event) => {
       d.audio.addEventListener(event, updateAudioControls);
     });
@@ -2403,6 +2814,7 @@ const introMaxSeconds = (() => {
         saveProgress();
         recordProgress(media);
       }
+      if (event === "seeked") saveProgress(true);
       if (event === "play") {
         scheduleControls();
         recordPlay();
@@ -2424,7 +2836,7 @@ const introMaxSeconds = (() => {
       if (event === "error") d.stage.dataset.signal = "interrupted";
     }
 
-    const videoEvents = ["play", "pause", "ended", "timeupdate", "durationchange", "loadedmetadata", "volumechange", "ratechange", "waiting", "stalled", "canplay", "playing", "error"];
+    const videoEvents = ["play", "pause", "ended", "timeupdate", "seeked", "durationchange", "loadedmetadata", "volumechange", "ratechange", "waiting", "stalled", "canplay", "playing", "error"];
     for (const media of [d.video, d.movi] as VideoMedia[]) {
       for (const event of videoEvents) media.addEventListener(event, () => {
         if (event === "loadedmetadata") restoreProgress(media);
@@ -2488,6 +2900,20 @@ const introMaxSeconds = (() => {
         return;
       }
 
+      if (isFileRoute(path)) {
+        const [item, parentLoaded] = await Promise.all([
+          requestItem(path, true),
+          load(parentPseudoPath(path), "", "none")
+        ]);
+        if (!parentLoaded || request !== routeRequest) return;
+        if (item) {
+          await openItem(path, "none", item);
+          if (request !== routeRequest) return;
+          updateVisitorUrl(path, canonicalize ? "replace" : "none");
+          return;
+        }
+      }
+
       const folderLoaded = await load(path, "", "none");
       if (!folderLoaded || request !== routeRequest) return;
       if (s.items.length) {
@@ -2517,6 +2943,9 @@ const introMaxSeconds = (() => {
     d.language.value = s.lang;
     applyLanguage();
     window.addEventListener("pagehide", () => saveProgress(true));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") saveProgress(true);
+    });
     window.addEventListener("popstate", () => {
       restoreVisitorRoute().catch((error) => setStatus(d.libraryStatus, error.message, "error"));
     });

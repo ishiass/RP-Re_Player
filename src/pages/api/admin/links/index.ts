@@ -26,6 +26,7 @@ export const POST: APIRoute = async (context) => {
       poster: body.poster,
       sub: body.sub,
       embeddedMulti: body.embeddedMulti === true || body.embeddedMulti === "1" || body.embeddedMulti === "on",
+      h5Player: body.h5Player === "playsvideo" || body.h5Player === "movi" ? body.h5Player : undefined,
       lrc: body.lrc,
       lrc2: body.lrc2
     });

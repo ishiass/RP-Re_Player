@@ -1,6 +1,7 @@
 import type { AppEnv } from "./cloudflare";
 
 export type PseudoKind = "video" | "audio" | "image" | "file";
+export type H5Player = "playsvideo" | "movi";
 
 export interface PseudoItem {
   id: string;
@@ -13,6 +14,7 @@ export interface PseudoItem {
   poster?: string;
   sub?: string;
   embeddedMulti?: boolean;
+  h5Player?: H5Player;
   lrc?: string;
   lrc2?: string;
   createdAt: string;
@@ -144,6 +146,7 @@ async function ensureDb(env: AppEnv) {
         poster TEXT,
         sub TEXT,
         embedded_multi INTEGER NOT NULL DEFAULT 0,
+        embedded_player TEXT,
         lrc TEXT,
         lrc2 TEXT,
         created_at TEXT NOT NULL,
@@ -158,6 +161,9 @@ async function ensureDb(env: AppEnv) {
   }
   if (!(info.results ?? []).some((column) => column.name === "embedded_multi")) {
     await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_multi INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!(info.results ?? []).some((column) => column.name === "embedded_player")) {
+    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_player TEXT").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "lrc")) {
     await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc TEXT").run();
@@ -182,6 +188,7 @@ function mapRow(row: any): PseudoItem {
     poster: row.poster || undefined,
     sub: row.sub || undefined,
     embeddedMulti: Boolean(row.embedded_multi),
+    h5Player: row.embedded_player === "playsvideo" ? "playsvideo" : row.embedded_multi ? "movi" : undefined,
     lrc: row.lrc || undefined,
     lrc2: row.lrc2 || undefined,
     createdAt: row.created_at,
@@ -192,11 +199,26 @@ function mapRow(row: any): PseudoItem {
 export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
   if (await ensureDb(env)) {
     const result = await env.DB!.prepare(
-      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
+      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
     ).all<any>();
     return (result.results ?? []).map(mapRow);
   }
   return [...memory().items].sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
+}
+
+export async function countItemsForMigration(env: AppEnv) {
+  if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
+  const row = await env.DB!.prepare("SELECT COUNT(*) AS count FROM rp_pseudo_links")
+    .first<{ count: number }>();
+  return Number(row?.count) || 0;
+}
+
+export async function itemsAfterForMigration(env: AppEnv, cursor: string, limit: number) {
+  if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
+  const result = await env.DB!.prepare(
+    "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path > ? ORDER BY path ASC LIMIT ?"
+  ).bind(cursor, limit).all<any>();
+  return (result.results ?? []).map(mapRow);
 }
 
 export async function listPublic(env: AppEnv, path = "/root", query = "") {
@@ -287,7 +309,7 @@ export async function getItem(env: AppEnv, path: string) {
   const normalized = normalizeRootPath(path);
   if (await ensureDb(env)) {
     const row = await env.DB!.prepare(
-      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
+      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
     )
       .bind(normalized)
       .first<any>();
@@ -307,6 +329,7 @@ export async function createItem(
     poster?: string;
     sub?: string;
     embeddedMulti?: boolean;
+    h5Player?: H5Player;
     lrc?: string;
     lrc2?: string;
   }
@@ -318,6 +341,8 @@ export async function createItem(
   assertRoutableSegment(name, "Name");
   const path = `${folder.replace(/\/+$/, "")}/${name}`;
   const now = new Date().toISOString();
+  const selectedH5Player = input.h5Player === "playsvideo" || input.h5Player === "movi" ? input.h5Player : undefined;
+  const embeddedMulti = input.kind === "video" && (Boolean(input.embeddedMulti) || Boolean(selectedH5Player));
   const item: PseudoItem = {
     id: crypto.randomUUID(),
     name,
@@ -327,7 +352,8 @@ export async function createItem(
     description: input.kind === "file" ? String(input.description || "").trim() : undefined,
     poster: input.kind === "file" ? undefined : webUrl(input.poster || "", "Poster URL"),
     sub: input.kind === "video" ? webUrl(input.sub || "", "Subtitle URL") : undefined,
-    embeddedMulti: input.kind === "video" && Boolean(input.embeddedMulti),
+    embeddedMulti,
+    h5Player: embeddedMulti ? selectedH5Player ?? "movi" : undefined,
     lrc: input.kind === "audio" ? webUrl(input.lrc || "", "Lyrics URL") : undefined,
     lrc2: input.kind === "audio" ? webUrl(input.lrc2 || "", "Other lyrics URL") : undefined,
     createdAt: now,
@@ -347,8 +373,8 @@ export async function createItem(
   if (await ensureDb(env)) {
     const result = await env.DB!.prepare(
       `
-        INSERT INTO rp_pseudo_links (id, name, path, url, kind, description, poster, sub, embedded_multi, lrc, lrc2, created_at, updated_at)
-        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        INSERT INTO rp_pseudo_links (id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE NOT EXISTS (
           SELECT 1
           FROM rp_pseudo_links
@@ -366,6 +392,7 @@ export async function createItem(
           poster = excluded.poster,
           sub = excluded.sub,
           embedded_multi = excluded.embedded_multi,
+          embedded_player = excluded.embedded_player,
           lrc = excluded.lrc,
           lrc2 = excluded.lrc2,
           updated_at = excluded.updated_at
@@ -381,6 +408,7 @@ export async function createItem(
         item.poster ?? null,
         item.sub ?? null,
         item.embeddedMulti ? 1 : 0,
+        item.h5Player ?? null,
         item.lrc ?? null,
         item.lrc2 ?? null,
         now,

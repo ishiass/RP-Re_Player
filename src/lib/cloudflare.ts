@@ -8,11 +8,14 @@ export interface AppEnv {
   N?: string;
   P?: string;
   T?: string;
+  WM?: string;
+  PBN?: string;
   US?: string;
   UI?: string;
   UH?: string;
   UD?: string;
   DB?: D1Database;
+  KV?: KVNamespace;
 }
 
 const persistedKeys = ["A", "B", "C", "N", "P", "US", "UI", "UH", "UD"] as const;

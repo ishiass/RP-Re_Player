@@ -1320,6 +1320,47 @@ textarea:focus-visible {
   gap: 13px;
 }
 
+.h5-player-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  min-height: 34px;
+}
+
+.h5-player-enable,
+.h5-player-options,
+.h5-player-options label {
+  display: flex;
+  align-items: center;
+}
+
+.h5-player-enable,
+.h5-player-options label {
+  gap: 7px;
+  color: #506b82;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.h5-player-enable input,
+.h5-player-options input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.h5-player-options {
+  gap: 16px;
+}
+
+.h5-player-options label {
+  white-space: nowrap;
+}
+
 .toggle-field {
   display: flex;
   align-items: center;
@@ -3254,9 +3295,10 @@ body:has(.login-screen)::before {
 }
 
 .media-app .video-controls {
+  --player-glass-opacity: 0.12;
   border: 1px solid rgba(215, 234, 247, 0.96);
   border-radius: 8px;
-  background: rgba(247, 251, 255, 0.18);
+  background: rgba(247, 251, 255, var(--player-glass-opacity));
   box-shadow: 0 8px 28px rgba(34, 72, 101, 0.1);
   color: #587890;
   backdrop-filter: blur(10px);
