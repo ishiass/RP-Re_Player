@@ -277,21 +277,6 @@ export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
   return allItemsFromD1(env);
 }
 
-export async function countItemsForMigration(env: AppEnv) {
-  if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
-  const row = await env.D1!.prepare("SELECT COUNT(*) AS count FROM rp_pseudo_links")
-    .first<{ count: number }>();
-  return Number(row?.count) || 0;
-}
-
-export async function itemsAfterForMigration(env: AppEnv, cursor: string, limit: number) {
-  if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
-  const result = await env.D1!.prepare(
-    "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path > ? ORDER BY path ASC LIMIT ?"
-  ).bind(cursor, limit).all<any>();
-  return (result.results ?? []).map(mapRow);
-}
-
 export async function listPublic(env: AppEnv, path = "/root", query = "") {
   const current = normalizeRootPath(path);
   const items = await allItems(env);
