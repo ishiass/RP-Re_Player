@@ -7,7 +7,4 @@ binding = "DB"
 database_name = "re-play"
 database_id = ""
 
-# Create a KV namespace and replace this ID before deploying the migration version.
-[[kv_namespaces]]
-binding = "KV"
-id = ""
+# KV is configured in the Cloudflare environment; keep namespace IDs out of this repository.
