@@ -1,10 +1,9 @@
 import type { AppEnv } from "./cloudflare";
 import { countItemsForMigration, itemsAfterForMigration } from "./pseudo";
-import { getVisitorTheme } from "./theme";
+import { getVisitorThemeFromD1 } from "./theme";
+import { PSEUDO_KV_PREFIX, THEME_KV_KEY } from "./storage";
 
 const MIGRATION_ID = "d1-kv-pseudo-theme-v1";
-const ITEM_PREFIX = "rp:v1:pseudo:";
-const THEME_KEY = "rp:v1:visitor-theme";
 const BATCH_SIZE = 100;
 const LEASE_MS = 90_000;
 
@@ -21,11 +20,11 @@ interface MigrationState {
 }
 
 async function ensureMigrationState(env: AppEnv) {
-  if (!env.DB) throw new Error("D1 binding is not configured.");
+  if (!env.D1) throw new Error("D1 binding is not configured.");
   if (!env.KV) throw new Error("KV binding is not configured.");
 
   const total = await countItemsForMigration(env);
-  await env.DB.prepare(`
+  await env.D1.prepare(`
     CREATE TABLE IF NOT EXISTS rp_kv_migration (
       migration_id TEXT PRIMARY KEY,
       cursor TEXT NOT NULL DEFAULT '',
@@ -39,13 +38,13 @@ async function ensureMigrationState(env: AppEnv) {
       updated_at TEXT NOT NULL
     )
   `).run();
-  await env.DB.prepare(`
+  await env.D1.prepare(`
     INSERT OR IGNORE INTO rp_kv_migration
       (migration_id, cursor, total, processed, theme_done, status, updated_at)
     VALUES (?, '', ?, 0, 0, 'pending', ?)
   `).bind(MIGRATION_ID, total, new Date().toISOString()).run();
 
-  const state = await env.DB.prepare(
+  const state = await env.D1.prepare(
     "SELECT migration_id, cursor, total, processed, theme_done, status, lock_token, lease_until, last_error FROM rp_kv_migration WHERE migration_id = ?"
   ).bind(MIGRATION_ID).first<MigrationState>();
   if (!state) throw new Error("Could not initialize migration state.");
@@ -81,7 +80,7 @@ export async function migrateD1PseudoAndTheme(env: AppEnv) {
 
   const now = Date.now();
   const token = crypto.randomUUID();
-  const claim = await env.DB!.prepare(`
+  const claim = await env.D1!.prepare(`
     UPDATE rp_kv_migration
     SET lock_token = ?, lease_until = ?, status = 'running', last_error = NULL, updated_at = ?
     WHERE migration_id = ? AND status <> 'complete'
@@ -101,27 +100,27 @@ export async function migrateD1PseudoAndTheme(env: AppEnv) {
   }
 
   try {
-    const current = await env.DB!.prepare(
+    const current = await env.D1!.prepare(
       "SELECT migration_id, cursor, total, processed, theme_done, status, lock_token, lease_until, last_error FROM rp_kv_migration WHERE migration_id = ?"
     ).bind(MIGRATION_ID).first<MigrationState>();
     if (!current) throw new Error("Could not read migration state.");
 
     let themeDone = Boolean(current.theme_done);
     if (!themeDone) {
-      await putIfChanged(env, THEME_KEY, await getVisitorTheme(env));
+      await putIfChanged(env, THEME_KV_KEY, await getVisitorThemeFromD1(env));
       themeDone = true;
     }
 
     const items = await itemsAfterForMigration(env, current.cursor, BATCH_SIZE);
     await Promise.all(items.map(async (item) => {
-      const key = `${ITEM_PREFIX}${await sha256(item.path)}`;
+      const key = `${PSEUDO_KV_PREFIX}${await sha256(item.path)}`;
       await putIfChanged(env, key, JSON.stringify(item));
     }));
 
     const processed = current.processed + items.length;
     const done = processed >= current.total || items.length < BATCH_SIZE;
     const cursor = items.at(-1)?.path ?? current.cursor;
-    await env.DB!.prepare(`
+    await env.D1!.prepare(`
       UPDATE rp_kv_migration
       SET cursor = ?, processed = ?, theme_done = ?, status = ?, lock_token = NULL,
           lease_until = NULL, last_error = NULL, updated_at = ?
@@ -148,7 +147,7 @@ export async function migrateD1PseudoAndTheme(env: AppEnv) {
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await env.DB!.prepare(`
+    await env.D1!.prepare(`
       UPDATE rp_kv_migration
       SET status = 'error', last_error = ?, lock_token = NULL, lease_until = NULL, updated_at = ?
       WHERE migration_id = ? AND lock_token = ?

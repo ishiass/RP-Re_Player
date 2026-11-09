@@ -93,7 +93,7 @@ npm run cf:deploy
 
 ```toml
 [[d1_databases]]
-binding = "DB"
+binding = "D1"
 database_name = "your-database-name"
 database_id = "your-cloudflare-d1-database-id"
 ```
@@ -108,7 +108,7 @@ RP 会自动创建并升级以下数据表：
 | `rp_settings` | 保存的环境变量 |
 | `rp_visitor_theme` | 公开页访客主题 |
 
-D1 绑定名必须保持为 `DB`。
+D1 绑定名必须保持为 `D1`。另需在 Cloudflare 环境绑定一个名为 `KV` 的 KV Namespace；不要在仓库中提交空的 KV ID。
 
 ## 🔧 环境变量
 
@@ -121,13 +121,16 @@ D1 绑定名必须保持为 `DB`。
 | `P` | 管理员密码 |
 | `WM` | Movi 播放器字幕缩放倍率；默认 `0.78`（有效范围 `0.1`–`3`） |
 | `PBN` | 视频进度控制层玻璃背景透明度；默认 `0.12`（`0` 完全透明，`1` 不透明） |
-| `DB` | D1 绑定 |
+| `DB` | 伪挂载和访客主题的存储选择：`d1` 或 `kv`，默认 `d1` |
+| `D1` | D1 绑定；播放统计、访问记录、设置和 KV 备份仍使用 D1 |
 | `US` | Umami 脚本地址 |
 | `UI` | Umami 网站 ID |
 | `UH` | 可选 Umami 主机地址 |
 | `UD` | 可选 Umami 域名列表 |
 
 D1 可用时，RP 会在对应 `env:变量名` 键尚不存在时，将非空的 `A`、`B`、`C`、`N`、`P`、`US`、`UI`、`UH` 和 `UD` 绑定写入 `rp_settings`；后续部署优先读取数据库中的值。`WM` 与 `PBN` 则直接读取运行时环境变量，不写入 D1，因此可直接调整而不受已保存设置覆盖。`keep_vars = true` 也会阻止 Wrangler 删除在 Cloudflare 控制台中配置的变量。
+
+`DB` 仅在值为 `kv` 且已绑定 `KV` 时，才会让伪挂载链接和访客主题改用 KV；缺少 KV 绑定或 `DB` 为其他值时自动使用 D1。播放进度、统计、访问记录、设置和迁移状态始终保留在 D1。KV 模式下，挂载链接的新增、删除和主题变更也会同步写入 D1 作为备份；KV 数据初始化标记缺失时会从 D1 备份重建。
 
 ## 📖 功能详解
 

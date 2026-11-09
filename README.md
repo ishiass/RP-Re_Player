@@ -93,7 +93,7 @@ The project already has an active D1 binding in `wrangler.toml`. When deploying 
 
 ```toml
 [[d1_databases]]
-binding = "DB"
+binding = "D1"
 database_name = "your-database-name"
 database_id = "your-cloudflare-d1-database-id"
 ```
@@ -108,7 +108,7 @@ RP creates and upgrades the following tables automatically:
 | `rp_settings` | Persisted environment variables |
 | `rp_visitor_theme` | Public-page visitor theme |
 
-The D1 binding name must remain `DB`.
+The D1 binding name must remain `D1`. Also configure a KV namespace binding named `KV` in the Cloudflare environment; do not commit an empty KV namespace ID to this repository.
 
 ## 🔧 Environment Variables
 
@@ -121,13 +121,16 @@ The D1 binding name must remain `DB`.
 | `P` | Administrator password |
 | `WM` | Movi subtitle size multiplier; default `0.78` (accepted range `0.1`–`3`) |
 | `PBN` | Video control bar glass background opacity; default `0.12` (`0` transparent, `1` opaque) |
-| `DB` | D1 binding |
+| `DB` | Storage selection for pseudo-mounts and visitor theme: `d1` or `kv`; defaults to `d1` |
+| `D1` | D1 binding; playback stats, visitor events, settings, and KV backups remain in D1 |
 | `US` | Umami script URL |
 | `UI` | Umami website ID |
 | `UH` | Optional Umami host URL |
 | `UD` | Optional Umami domain list |
 
 When D1 is available, RP seeds `rp_settings` from non-empty `A`, `B`, `C`, `N`, `P`, `US`, `UI`, `UH`, and `UD` bindings when their `env:VARIABLE` keys are missing; stored values take priority on later deployments. `WM` and `PBN` are read directly from the runtime environment and are not stored in D1, so they can be adjusted there without changing saved settings. `keep_vars = true` also prevents Wrangler from deleting variables configured in the Cloudflare dashboard.
+
+Pseudo-mount links and the visitor theme use KV only when `DB` is set to `kv` and the `KV` binding exists; without that binding, or for any other `DB` value, they automatically use D1. Playback progress, analytics, visitor events, settings, and migration state always remain in D1. In KV mode, mount creation/deletion and theme changes are also written to D1 as backups. If KV initialization markers are missing, the KV data is rebuilt from those D1 backups.
 
 ## 📖 Details
 

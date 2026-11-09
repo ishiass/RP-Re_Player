@@ -3,7 +3,7 @@ compatibility_date = "2026-09-06"
 keep_vars = true
 
 [[d1_databases]]
-binding = "DB"
+binding = "D1"
 database_name = "re-play"
 database_id = ""
 

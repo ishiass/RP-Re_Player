@@ -1,4 +1,5 @@
 import type { AppEnv } from "./cloudflare";
+import { PSEUDO_KV_PREFIX, PSEUDO_KV_READY_KEY, pseudoKvKey, usesKvForPseudoAndTheme } from "./storage";
 
 export type PseudoKind = "video" | "audio" | "image" | "file";
 export type H5Player = "playsvideo" | "movi";
@@ -133,8 +134,8 @@ function pathConflict(items: PseudoItem[], path: string) {
 }
 
 async function ensureDb(env: AppEnv) {
-  if (!env.DB) return false;
-  await env.DB.prepare(
+  if (!env.D1) return false;
+  await env.D1.prepare(
     `
       CREATE TABLE IF NOT EXISTS rp_pseudo_links (
         id TEXT PRIMARY KEY,
@@ -155,24 +156,24 @@ async function ensureDb(env: AppEnv) {
     `
   ).run();
 
-  const info = await env.DB.prepare("PRAGMA table_info(rp_pseudo_links)").all<{ name: string }>();
+  const info = await env.D1.prepare("PRAGMA table_info(rp_pseudo_links)").all<{ name: string }>();
   if (!(info.results ?? []).some((column) => column.name === "sub")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN sub TEXT").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN sub TEXT").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "embedded_multi")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_multi INTEGER NOT NULL DEFAULT 0").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_multi INTEGER NOT NULL DEFAULT 0").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "embedded_player")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_player TEXT").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN embedded_player TEXT").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "lrc")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc TEXT").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc TEXT").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "lrc2")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc2 TEXT").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN lrc2 TEXT").run();
   }
   if (!(info.results ?? []).some((column) => column.name === "description")) {
-    await env.DB.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN description TEXT").run();
+    await env.D1.prepare("ALTER TABLE rp_pseudo_links ADD COLUMN description TEXT").run();
   }
   return true;
 }
@@ -196,9 +197,9 @@ function mapRow(row: any): PseudoItem {
   };
 }
 
-export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
+async function allItemsFromD1(env: AppEnv): Promise<PseudoItem[]> {
   if (await ensureDb(env)) {
-    const result = await env.DB!.prepare(
+    const result = await env.D1!.prepare(
       "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
     ).all<any>();
     return (result.results ?? []).map(mapRow);
@@ -206,16 +207,86 @@ export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
   return [...memory().items].sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
 }
 
+async function writeItemToKv(env: AppEnv, item: PseudoItem, preserveNewer = false) {
+  const key = await pseudoKvKey(item.path);
+  const current = await env.KV!.get(key);
+  if (current) {
+    try {
+      const currentItem = JSON.parse(current) as PseudoItem;
+      if (preserveNewer && currentItem.updatedAt && currentItem.updatedAt > item.updatedAt) return;
+    } catch {
+      // Replace malformed stored values from the D1 backup.
+    }
+  }
+  await env.KV!.put(key, JSON.stringify(item));
+}
+
+async function ensureKvPseudoReady(env: AppEnv) {
+  if (!env.KV || await env.KV.get(PSEUDO_KV_READY_KEY) === "1") return;
+  const backup = await allItemsFromD1(env);
+  for (let start = 0; start < backup.length; start += 50) {
+    await Promise.all(backup.slice(start, start + 50).map((item) => writeItemToKv(env, item, true)));
+  }
+  const liveKeys = new Set(await Promise.all(backup.map((item) => pseudoKvKey(item.path))));
+  let cursor: string | undefined;
+  do {
+    const page = await env.KV.list({
+      prefix: PSEUDO_KV_PREFIX,
+      limit: 1000,
+      ...(cursor ? { cursor } : {})
+    });
+    const staleKeys = page.keys.map(({ name }) => name).filter((key) => !liveKeys.has(key));
+    await Promise.all(staleKeys.map((key) => env.KV!.delete(key)));
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  await env.KV.put(PSEUDO_KV_READY_KEY, "1");
+}
+
+async function allItemsFromKv(env: AppEnv): Promise<PseudoItem[]> {
+  await ensureKvPseudoReady(env);
+  const items: PseudoItem[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await env.KV!.list({
+      prefix: PSEUDO_KV_PREFIX,
+      limit: 1000,
+      ...(cursor ? { cursor } : {})
+    });
+    for (let start = 0; start < page.keys.length; start += 50) {
+      const keys = page.keys.slice(start, start + 50);
+      const values = await Promise.all(keys.map(({ name }) => env.KV!.get(name)));
+      for (const value of values) {
+        if (!value) continue;
+        const item = JSON.parse(value) as PseudoItem;
+        if (item && typeof item.path === "string" && typeof item.id === "string") items.push(item);
+      }
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return items.sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
+}
+
+export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
+  if (usesKvForPseudoAndTheme(env)) {
+    try {
+      return await allItemsFromKv(env);
+    } catch {
+      return allItemsFromD1(env);
+    }
+  }
+  return allItemsFromD1(env);
+}
+
 export async function countItemsForMigration(env: AppEnv) {
   if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
-  const row = await env.DB!.prepare("SELECT COUNT(*) AS count FROM rp_pseudo_links")
+  const row = await env.D1!.prepare("SELECT COUNT(*) AS count FROM rp_pseudo_links")
     .first<{ count: number }>();
   return Number(row?.count) || 0;
 }
 
 export async function itemsAfterForMigration(env: AppEnv, cursor: string, limit: number) {
   if (!(await ensureDb(env))) throw new Error("D1 binding is required for migration.");
-  const result = await env.DB!.prepare(
+  const result = await env.D1!.prepare(
     "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path > ? ORDER BY path ASC LIMIT ?"
   ).bind(cursor, limit).all<any>();
   return (result.results ?? []).map(mapRow);
@@ -307,8 +378,21 @@ export async function listPublic(env: AppEnv, path = "/root", query = "") {
 
 export async function getItem(env: AppEnv, path: string) {
   const normalized = normalizeRootPath(path);
+  if (usesKvForPseudoAndTheme(env)) {
+    try {
+      await ensureKvPseudoReady(env);
+      const value = await env.KV!.get(await pseudoKvKey(normalized));
+      return value ? JSON.parse(value) as PseudoItem : null;
+    } catch {
+      return getItemFromD1(env, normalized);
+    }
+  }
+  return getItemFromD1(env, normalized);
+}
+
+async function getItemFromD1(env: AppEnv, normalized: string) {
   if (await ensureDb(env)) {
-    const row = await env.DB!.prepare(
+    const row = await env.D1!.prepare(
       "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
     )
       .bind(normalized)
@@ -370,8 +454,10 @@ export async function createItem(
     throw new Error("A media item cannot be used as a folder.");
   }
 
-  if (await ensureDb(env)) {
-    const result = await env.DB!.prepare(
+  const kvMode = usesKvForPseudoAndTheme(env);
+  const dbReady = await ensureDb(env);
+  if (dbReady) {
+    const result = await env.D1!.prepare(
       `
         INSERT INTO rp_pseudo_links (id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at)
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -420,7 +506,12 @@ export async function createItem(
       )
       .run();
     if (!result.meta.changes) throw new Error("This path conflicts with another media item.");
-  } else {
+  }
+
+  if (kvMode) {
+    await ensureKvPseudoReady(env);
+    await writeItemToKv(env, item);
+  } else if (!dbReady) {
     const state = memory();
     if (pathConflict(state.items, path)) throw new Error("This path conflicts with another media item.");
     state.items = [item, ...state.items.filter((existing) => existing.path !== item.path)];
@@ -430,13 +521,28 @@ export async function createItem(
 }
 
 export async function deleteItem(env: AppEnv, pathOrId: string) {
-  if (await ensureDb(env)) {
-    await env.DB!.prepare("DELETE FROM rp_pseudo_links WHERE id = ? OR path = ?")
+  const kvMode = usesKvForPseudoAndTheme(env);
+  const normalized = normalizeRootPath(pathOrId);
+  let item = kvMode
+    ? (await allItems(env)).find((candidate) => candidate.id === pathOrId || candidate.path === normalized)
+    : undefined;
+  const dbReady = await ensureDb(env);
+  if (dbReady) {
+    if (kvMode && !item) {
+      const row = await env.D1!.prepare(
+        "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE id = ? OR path = ? LIMIT 1"
+      ).bind(pathOrId, normalized).first<any>();
+      if (row) item = mapRow(row);
+    }
+    await env.D1!.prepare("DELETE FROM rp_pseudo_links WHERE id = ? OR path = ?")
       .bind(pathOrId, normalizeRootPath(pathOrId))
       .run();
-  } else {
+  }
+  if (kvMode && env.KV) {
+    await ensureKvPseudoReady(env);
+    if (item) await env.KV.delete(await pseudoKvKey(item.path));
+  } else if (!dbReady) {
     const state = memory();
-    const normalized = normalizeRootPath(pathOrId);
     state.items = state.items.filter((item) => item.id !== pathOrId && item.path !== normalized);
   }
 

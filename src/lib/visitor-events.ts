@@ -23,8 +23,8 @@ function memory() {
 }
 
 async function ensureDb(env: AppEnv) {
-  if (!env.DB) return false;
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS rp_visitor_events (
+  if (!env.D1) return false;
+  await env.D1.prepare(`CREATE TABLE IF NOT EXISTS rp_visitor_events (
     id TEXT PRIMARY KEY,
     event TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -33,7 +33,7 @@ async function ensureDb(env: AppEnv) {
     region TEXT,
     created_at TEXT NOT NULL
   )`).run();
-  await env.DB.prepare("ALTER TABLE rp_visitor_events ADD COLUMN region TEXT").run().catch(() => undefined);
+  await env.D1.prepare("ALTER TABLE rp_visitor_events ADD COLUMN region TEXT").run().catch(() => undefined);
   return true;
 }
 
@@ -44,7 +44,7 @@ async function enrichVisitorEvent(env: AppEnv, row: VisitorEventRow) {
     if (!details) return;
     row.region = formatRegion(details, row.createdAt);
     if (await ensureDb(env)) {
-      await env.DB!.prepare("UPDATE rp_visitor_events SET region = ? WHERE id = ?").bind(row.region, row.id).run();
+      await env.D1!.prepare("UPDATE rp_visitor_events SET region = ? WHERE id = ?").bind(row.region, row.id).run();
     }
   } catch {
     // The initial country record is intentionally retained when enrichment fails.
@@ -72,7 +72,7 @@ export async function recordVisitorEvent(
     createdAt
   };
   if (await ensureDb(env)) {
-    await env.DB!.prepare("INSERT INTO rp_visitor_events (id, event, path, ip, country, region, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    await env.D1!.prepare("INSERT INTO rp_visitor_events (id, event, path, ip, country, region, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(row.id, row.event, row.path, row.ip, row.country, row.region, row.createdAt).run();
   } else {
     memory().unshift(row);
@@ -87,7 +87,7 @@ export async function recordVisitorEvent(
 export async function listVisitorEvents(env: AppEnv, limit = 200) {
   const safeLimit = Math.min(500, Math.max(1, Math.floor(limit)));
   if (await ensureDb(env)) {
-    const result = await env.DB!.prepare("SELECT id, event, path, ip, country, region, created_at FROM rp_visitor_events ORDER BY created_at DESC LIMIT ?").bind(safeLimit).all<any>();
+    const result = await env.D1!.prepare("SELECT id, event, path, ip, country, region, created_at FROM rp_visitor_events ORDER BY created_at DESC LIMIT ?").bind(safeLimit).all<any>();
     return (result.results ?? []).map((row) => ({ id: row.id, event: row.event, path: row.path, ip: row.ip || "", country: row.country || "", region: row.region || row.country || "-", createdAt: row.created_at }));
   }
   return memory().slice(0, safeLimit);
@@ -95,7 +95,7 @@ export async function listVisitorEvents(env: AppEnv, limit = 200) {
 
 export async function visitorSummary(env: AppEnv) {
   if (await ensureDb(env)) {
-    const result = await env.DB!.prepare("SELECT event, COUNT(*) AS count FROM rp_visitor_events GROUP BY event ORDER BY count DESC").all<{ event: string; count: number }>();
+    const result = await env.D1!.prepare("SELECT event, COUNT(*) AS count FROM rp_visitor_events GROUP BY event ORDER BY count DESC").all<{ event: string; count: number }>();
     return (result.results ?? []).map((row) => ({ event: row.event, count: Number(row.count) || 0 }));
   }
   const counts = new Map<string, number>();

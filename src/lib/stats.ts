@@ -32,8 +32,8 @@ function result(row: VisitorStatRow | null | undefined, eligible = 0, completion
 }
 
 async function ensureDb(env: AppEnv) {
-  if (!env.DB) return false;
-  await env.DB.prepare(
+  if (!env.D1) return false;
+  await env.D1.prepare(
     `
       CREATE TABLE IF NOT EXISTS rp_media_visitors (
         path TEXT NOT NULL,
@@ -48,7 +48,7 @@ async function ensureDb(env: AppEnv) {
 }
 
 async function aggregateDb(env: AppEnv, path: string) {
-  const row = await env.DB!.prepare(`
+  const row = await env.D1!.prepare(`
     SELECT SUM(CASE WHEN max_progress > 0.5 THEN 1 ELSE 0 END) AS eligible,
            SUM(CASE WHEN max_progress > 0.81 THEN 1 ELSE 0 END) AS completions
     FROM rp_media_visitors WHERE path = ?
@@ -66,7 +66,7 @@ function aggregateMemory(path: string) {
 
 export async function getMediaStat(env: AppEnv, path: string, visitorId: string): Promise<MediaStat> {
   if (await ensureDb(env)) {
-    const row = await env.DB!.prepare(
+    const row = await env.D1!.prepare(
       "SELECT plays, max_progress FROM rp_media_visitors WHERE path = ? AND visitor_id = ? LIMIT 1"
     ).bind(path, visitorId).first<VisitorStatRow>();
     const aggregate = await aggregateDb(env, path);
@@ -81,7 +81,7 @@ export async function recordMediaStat(env: AppEnv, path: string, visitorId: stri
   const nextProgress = Math.min(1, Math.max(0, Number(progress) || 0));
   if (await ensureDb(env)) {
     if (event === "play") {
-      await env.DB!.prepare(
+      await env.D1!.prepare(
         `
           INSERT INTO rp_media_visitors (path, visitor_id, plays, max_progress)
           VALUES (?, ?, 1, 0)
@@ -89,7 +89,7 @@ export async function recordMediaStat(env: AppEnv, path: string, visitorId: stri
         `
       ).bind(path, visitorId).run();
     } else {
-      await env.DB!.prepare(
+      await env.D1!.prepare(
         `
           INSERT INTO rp_media_visitors (path, visitor_id, plays, max_progress)
           VALUES (?, ?, 0, ?)
