@@ -1659,9 +1659,13 @@ const introMaxSeconds = (() => {
     }
 
     function releaseMoviSource() {
-      d.movi.pause();
-      d.movi.setSubtitleRenderer(null);
-      d.movi.src = null;
+      if (typeof d.movi.pause === "function") {
+        d.movi.pause();
+        d.movi.src = null;
+      }
+      if (typeof d.movi.setSubtitleRenderer === "function") {
+        d.movi.setSubtitleRenderer(null);
+      }
       s.moviActive = false;
       if (s.moviExternalObjectUrl) URL.revokeObjectURL(s.moviExternalObjectUrl);
       s.moviExternalObjectUrl = null;
