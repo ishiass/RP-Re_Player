@@ -26,9 +26,11 @@ Re Player は**リンク型メディアライブラリ**です。管理者が外
 **リポジトリ**: [github.com/lircia/RP-Re_Player](https://github.com/lircia/RP-Re_Player)
 
 > [!NOTE]
-> 本プロジェクトは **MIT** ライセンスで公開されています。自由に利用・変更・再配布できます。
+> Re Player 独自のソースコードは **MIT** ライセンスです。サードパーティコンポーネントは各自のライセンスと通知に従います。
 >
 > 本プロジェクトには Apache License 2.0 で提供される `movi-player` 0.4.1 と、そのライセンスに記載されたサードパーティコンポーネントが含まれます。詳しくは [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) と同梱の [movi-player ライセンス本文](THIRD-PARTY-NOTICES) を参照してください。
+>
+> H5 再生困難モードには `playsvideo` 0.4.7（MIT）と `@vplayer/react` 0.4.5 も含まれます。現在、VPlayer のリポジトリと npm パッケージにライセンス宣言がありません。VPlayer を含むビルドを再配布する前に許諾を確認してください。詳しくは [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
 
 ## 🚀 クイックスタート
 
@@ -130,7 +132,7 @@ D1 バインディング名は `D1` のままでなければなりません。�
 
 D1 が利用できる場合、RP は `env:変数名` キーがまだないときに、空でない `A`、`B`、`C`、`N`、`P`、`US`、`UI`、`UH`、`UD` の各バインディングを `rp_settings` に保存します。以降のデプロイでは保存値が優先されます。`WM` と `PBN` は実行環境から直接読み取り、D1 には保存しないため、保存済み設定に上書きされずに変更できます。`keep_vars = true` は Cloudflare ダッシュボードで設定した変数が Wrangler に削除されるのを防ぎます。
 
-`DB` が `kv` で、`KV` バインディングが存在する場合に限り、疑似マウントリンクと訪問者テーマに KV を使用します。KV が未設定の場合や `DB` がその他の値の場合は D1 に自動的に戻ります。再生進捗、統計、訪問記録、設定、移行状態は引き続き D1 に保存されます。KV モードでもマウントの追加・削除とテーマ変更を D1 にバックアップします。KV の初期化マーカーがない場合、D1 のバックアップから KV を再構築します。
+`DB` が `kv` で、`KV` バインディングが存在する場合に限り、疑似マウントリンクと訪問者テーマに KV を使用します。KV が未設定の場合や `DB` がその他の値の場合は D1 に自動的に戻ります。再生進捗、統計、訪問記録、設定、移行状態は引き続き D1 に保存されます。KV モードでは、管理画面でのマウント変更とテーマ切り替えだけが KV に書き込みます。その後、KV から読み取ったデータと差がある場合だけ D1 のバックアップを更新します。通常の読み取りでは KV に書き込まず、D1 から KV への復元も行いません。`/setup` では、現在時刻、リクエスト IP、ホスト名、訪問者テーマ、疑似マウントの実際の保存先を表示し、資格情報やバインディング ID は表示しません。
 
 ## 📖 詳細
 
@@ -178,8 +180,10 @@ RP-Re_Player
 - [Astro](https://astro.build) — Web フレームワーク
 - [JASSUB](https://github.com/ThaUnknown/jassub) / [libass](https://github.com/libass/libass) — ASS 字幕描画
 - [movi-player](https://github.com/MrUjjwalG/movi-player) — メディアプレイヤー
+- [PlaysVideo](https://github.com/kzahel/playsvideo) — H5 で再生困難な動画向けのオプション処理
+- [VPlayer](https://github.com/tgdrive/vplayer) — オプションの React 動画プレイヤー
 - [Umami](https://umami.is) — オプションのサイト分析
 
 ## ⚖️ ライセンス
 
-Re Player 独自のソースコードは [MIT License](LICENSE) で提供されます。サードパーティ依存関係はそれぞれのライセンスに従います。`movi-player` 0.4.1 は Apache License 2.0 です。ビルド成果物を再配布する前に [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を確認してください。
+Re Player 独自のソースコードは [MIT License](LICENSE) で提供されます。サードパーティ依存関係はそれぞれのライセンスに従い、`movi-player` 0.4.1 は Apache License 2.0、`playsvideo` 0.4.7 は MIT です。現在、VPlayer の上流リポジトリと npm パッケージにはライセンス宣言がなく、VPlayer を含むビルドの再配布許可は確認できていません。再配布前に [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を確認してください。

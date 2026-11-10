@@ -1,10 +1,7 @@
 name = "rp"
-compatibility_date = "2026-09-06"
+compatibility_date = "2026-02-22"
 keep_vars = true
 
 [[d1_databases]]
 binding = "D1"
 database_name = "re-play"
-database_id = ""
-
-# KV is configured in the Cloudflare environment; keep namespace IDs out of this repository.

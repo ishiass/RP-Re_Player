@@ -241,6 +241,7 @@ const introMaxSeconds = (() => {
               style={`--movi-subtitle-size: ${moviSubtitleSize};`}
               fallback="native"
             ></movi-player>
+            <div id="vplayerHost" class="vplayer-host" hidden></div>
             <div id="videoControls" class="video-controls" style={`--player-glass-opacity: ${playerGlassOpacity};`}>
               <label class="video-seek">
                 <span class="sr-only" data-i18n="seek">Seek</span>
@@ -357,6 +358,15 @@ const introMaxSeconds = (() => {
                   <option value="off" data-i18n="subtitleOff">Off</option>
                 </select>
               </label>
+              <label id="videoBackendSelector" class="video-backend-selector" hidden>
+                <span class="sr-only" data-i18n="videoPlayer">Video player</span>
+                <select id="videoBackendSelect" aria-label="Video player">
+                  <option value="default" data-i18n="playerDefault">RP-default</option>
+                  <option value="playsvideo">PlaysVideo</option>
+                  <option value="movi">Movi Player</option>
+                  <option value="vplayer">VPlayer</option>
+                </select>
+              </label>
               <span id="lyricsBadge" class="media-badge subtitle-badge" hidden>
                 <Music2 size={14} /> LRC
               </span>
@@ -384,7 +394,7 @@ const introMaxSeconds = (() => {
   <script>
     import type JASSUB from "jassub";
     import type { MoviElement, SubtitleRenderer as MoviSubtitleRenderer, SubtitleTrack as MoviSubtitleTrack } from "movi-player/element";
-    import type { PlaysVideoEngine, SubtitleTrackInfo as PlaysVideoSubtitleTrack } from "playsvideo";
+    import type { PlaysVideoEngine } from "playsvideo";
     import { buildLyrics, type LyricCue, type LyricWord } from "../lib/lrc";
     import { publicCoverPath } from "../lib/pseudo";
     import { parentPseudoPath, pseudoPathFromVisitorUrl, visitorUrl } from "../lib/visitor-route";
@@ -416,6 +426,8 @@ const introMaxSeconds = (() => {
         subtitleTrack: "Subtitle",
         subtitleOff: "Off",
         externalSubtitle: "External subtitle",
+        videoPlayer: "Video player",
+        playerDefault: "RP-default",
         playFailed: "The video could not be started.",
         playing: "Now playing",
         buffering: "Buffering...",
@@ -467,6 +479,8 @@ const introMaxSeconds = (() => {
         subtitleTrack: "字幕",
         subtitleOff: "关闭字幕",
         externalSubtitle: "外置字幕",
+        videoPlayer: "播放器",
+        playerDefault: "RP-default",
         playFailed: "视频无法开始播放。",
         playing: "正在播放",
         buffering: "正在缓冲...",
@@ -518,6 +532,8 @@ const introMaxSeconds = (() => {
         subtitleTrack: "字幕",
         subtitleOff: "字幕なし",
         externalSubtitle: "外部字幕",
+        videoPlayer: "プレーヤー",
+        playerDefault: "RP-default",
         playFailed: "動画を再生できませんでした。",
         playing: "再生中",
         buffering: "バッファリング中...",
@@ -561,6 +577,8 @@ const introMaxSeconds = (() => {
       isDefault: boolean;
     };
     type SubtitleSelection = "off" | "external" | `embedded:${number}`;
+    type VideoBackend = "default" | "playsvideo" | "movi" | "vplayer";
+    type VideoSubtitleOption = { id: number; label: string; index: number };
     type MediaItem = {
       id?: string;
       name: string;
@@ -572,7 +590,7 @@ const introMaxSeconds = (() => {
       poster?: string;
       sub?: string;
       embeddedMulti?: boolean;
-      h5Player?: "playsvideo" | "movi";
+      h5Player?: "playsvideo" | "movi" | "vplayer" | "select";
       lrc?: string;
       lrc2?: string;
       isDir?: boolean;
@@ -590,6 +608,11 @@ const introMaxSeconds = (() => {
       moviActive: boolean;
       playsVideoActive: boolean;
       playsVideoEngine: PlaysVideoEngine | null;
+      videoBackend: VideoBackend;
+      playsVideoTracks: VideoSubtitleOption[];
+      nativeEmbeddedSubtitle: EmbeddedSubtitle | null;
+      vplayerRoot: { unmount: () => void } | null;
+      vplayerVideo: HTMLVideoElement | null;
       moviSubtitleTracks: MoviSubtitleTrack[];
       moviSubtitleFonts: Uint8Array[];
       moviSubtitleRenderer: MoviAssRenderer | null;
@@ -616,6 +639,11 @@ const introMaxSeconds = (() => {
       moviActive: false,
       playsVideoActive: false,
       playsVideoEngine: null,
+      videoBackend: "default",
+      playsVideoTracks: [],
+      nativeEmbeddedSubtitle: null,
+      vplayerRoot: null,
+      vplayerVideo: null,
       moviSubtitleTracks: [],
       moviSubtitleFonts: [],
       moviSubtitleRenderer: null,
@@ -650,6 +678,7 @@ const introMaxSeconds = (() => {
       videoFrame: document.querySelector<HTMLElement>("#videoFrame")!,
       video: document.querySelector<HTMLVideoElement>("#videoPlayer")!,
       movi: document.querySelector<MoviElement>("#moviVideo")!,
+      vplayerHost: document.querySelector<HTMLElement>("#vplayerHost")!,
       videoControls: document.querySelector<HTMLElement>("#videoControls")!,
       playToggle: document.querySelector<HTMLButtonElement>("#playToggle")!,
       playIcon: document.querySelector<HTMLElement>("#playIcon")!,
@@ -699,6 +728,8 @@ const introMaxSeconds = (() => {
       subtitleText: document.querySelector<HTMLElement>("#subtitleBadgeText")!,
       subtitleSelector: document.querySelector<HTMLElement>("#subtitleSelector")!,
       subtitleSelect: document.querySelector("#subtitleSelect") as unknown as HTMLSelectElement,
+      videoBackendSelector: document.querySelector<HTMLElement>("#videoBackendSelector")!,
+      videoBackendSelect: document.querySelector("#videoBackendSelect") as unknown as HTMLSelectElement,
       lyricsBadge: document.querySelector<HTMLElement>("#lyricsBadge")!,
       nowPlaying: document.querySelector<HTMLElement>(".now-playing")!,
       title: document.querySelector<HTMLElement>("#mediaTitle")!,
@@ -800,7 +831,13 @@ const introMaxSeconds = (() => {
     type VideoMedia = HTMLVideoElement | MoviElement;
 
     function activeVideo(): VideoMedia {
-      return s.moviActive ? d.movi : d.video;
+      if (s.videoBackend === "movi") return d.movi;
+      if (s.videoBackend === "vplayer" && s.vplayerVideo) return s.vplayerVideo;
+      return d.video;
+    }
+
+    function ownsVideoControls() {
+      return s.moviActive || s.videoBackend === "vplayer";
     }
 
     function activeMedia(): VideoMedia | HTMLAudioElement | null {
@@ -1154,14 +1191,14 @@ const introMaxSeconds = (() => {
 
     function scheduleControls(delay = 4200) {
       window.clearTimeout(controlTimer);
-      if (s.moviActive) return;
+      if (ownsVideoControls()) return;
       if (seeking) return;
       controlTimer = window.setTimeout(() => d.videoFrame.classList.add("controls-hidden"), delay);
     }
 
     function showControls(lock = false) {
       window.clearTimeout(controlTimer);
-      if (s.moviActive) {
+      if (ownsVideoControls()) {
         d.videoFrame.classList.add("controls-hidden");
         return;
       }
@@ -1171,7 +1208,7 @@ const introMaxSeconds = (() => {
 
     function hideControls() {
       window.clearTimeout(controlTimer);
-      if (s.moviActive) return;
+      if (ownsVideoControls()) return;
       if (!seeking) d.videoFrame.classList.add("controls-hidden");
     }
 
@@ -1528,6 +1565,7 @@ const introMaxSeconds = (() => {
         renderSubtitleOptions();
       } else {
         d.subtitleSelector.hidden = true;
+        d.videoBackendSelector.hidden = true;
         // Do not show a "No subtitles" badge while an ordinary video is
         // still being inspected for an embedded track.  It is also omitted
         // when the inspection finds no subtitle at all.
@@ -1593,6 +1631,10 @@ const introMaxSeconds = (() => {
       await destroyVideoSubtitle();
       destroyPlaysVideo();
       destroyMoviVideo();
+      destroyVPlayer();
+      s.videoBackend = "default";
+      s.playsVideoTracks = [];
+      s.nativeEmbeddedSubtitle = null;
       s.moviSubtitleTracks = [];
       s.subtitleSelection = "off";
       d.subtitle.hidden = true;
@@ -1600,6 +1642,7 @@ const introMaxSeconds = (() => {
       d.video.pause();
       d.video.autoplay = false;
       d.video.hidden = true;
+      d.videoBackendSelector.hidden = true;
       d.movi.hidden = true;
       d.audio.pause();
       d.video.removeAttribute("src");
@@ -1656,6 +1699,15 @@ const introMaxSeconds = (() => {
       s.playsVideoEngine = null;
       s.playsVideoActive = false;
       engine?.destroy();
+    }
+
+    function destroyVPlayer() {
+      const root = s.vplayerRoot;
+      s.vplayerRoot = null;
+      s.vplayerVideo = null;
+      root?.unmount();
+      d.vplayerHost.replaceChildren();
+      d.vplayerHost.hidden = true;
     }
 
     function releaseMoviSource() {
@@ -1771,45 +1823,15 @@ const introMaxSeconds = (() => {
       return selected;
     }
 
-    function normalizedSubtitleLabel(value: string | null | undefined) {
-      return String(value || "").trim().toLocaleLowerCase().replace(/[\s._-]+/g, "");
-    }
-
-    function normalizeSubtitleLanguage(value: string | null | undefined) {
-      const language = String(value || "").trim().toLocaleLowerCase().split(/[-_]/)[0];
-      return ({ chi: "zho", cmn: "zho", eng: "en", jpn: "ja" } as Record<string, string>)[language] || language;
-    }
-
-    function playsVideoTextTrack(moviTrack: MoviSubtitleTrack) {
+    function collectPlaysVideoTracks() {
       const engine = s.playsVideoEngine;
-      if (!engine) return undefined;
-      const infos = engine.subtitleTracks;
-      const targetName = normalizedSubtitleLabel(moviTrack.label);
-      const targetLanguage = normalizeSubtitleLanguage(moviTrack.language);
-      let info: PlaysVideoSubtitleTrack | undefined;
-      if (targetName) {
-        info = infos.find((candidate) => normalizedSubtitleLabel(candidate.name) === targetName &&
-          (!targetLanguage || normalizeSubtitleLanguage(candidate.language) === targetLanguage));
-      }
-      if (!info && targetLanguage) {
-        info = infos.find((candidate) => normalizeSubtitleLanguage(candidate.language) === targetLanguage &&
-          (!moviTrack.codec || candidate.codec.toLocaleLowerCase().includes(moviTrack.codec.toLocaleLowerCase())));
-      }
-      if (!info) {
-        const moviIndex = s.moviSubtitleTracks.indexOf(moviTrack);
-        info = infos[moviIndex];
-      }
-      if (!info) return undefined;
-
-      const textTracks = Array.from(d.video.textTracks).filter((track) =>
-        track.kind === "subtitles" || track.kind === "captions"
-      );
-      const infoName = normalizedSubtitleLabel(info.name);
-      const textTrack = textTracks.find((track) =>
-        normalizeSubtitleLanguage(track.language) === normalizeSubtitleLanguage(info!.language) &&
-        infoName && normalizedSubtitleLabel(track.label).includes(infoName)
-      );
-      return textTrack || textTracks[infos.indexOf(info)];
+      if (!engine) return;
+      const infos = (engine as any).subtitleTracks as Array<{ name?: string; language?: string; codec?: string }>;
+      s.playsVideoTracks = (infos || []).map((info, index) => ({
+        id: index,
+        index,
+        label: [info.name, info.language, info.codec].filter(Boolean).join(" · ") || `${t("subtitleTrack")} ${index + 1}`
+      }));
     }
 
     async function applyPlaysVideoSubtitle(request: number, route: number, signal: AbortSignal) {
@@ -1824,31 +1846,60 @@ const introMaxSeconds = (() => {
         return true;
       }
       const id = embeddedSubtitleIndex(s.subtitleSelection);
-      const moviTrack = s.moviSubtitleTracks.find((track) => track.id === id);
-      const textTrack = moviTrack ? playsVideoTextTrack(moviTrack) : undefined;
+      const option = s.playsVideoTracks.find((track) => track.id === id);
+      const textTracks = Array.from(d.video.textTracks).filter((track) =>
+        track.kind === "subtitles" || track.kind === "captions"
+      );
+      const textTrack = option ? textTracks[option.index] : undefined;
       if (!textTrack) return false;
       textTrack.mode = "showing";
       return true;
     }
 
+    async function applyDefaultSubtitle(request: number, route: number, signal: AbortSignal) {
+      if (!isCurrentItemLoad(request, route, signal) || s.videoBackend !== "default") return false;
+      await destroyVideoSubtitle();
+      if (s.subtitleSelection === "off") return true;
+      const raw = s.subtitleSelection === "external"
+        ? s.externalSubtitleRaw
+        : s.nativeEmbeddedSubtitle?.raw;
+      if (!raw?.trim()) return false;
+      await installVideoSubtitle(raw, request, route, signal);
+      return true;
+    }
+
     async function applySelectedVideoSubtitle(request: number, route: number, signal: AbortSignal) {
-      return s.playsVideoActive
-        ? applyPlaysVideoSubtitle(request, route, signal)
-        : applyMoviSubtitle(request, route, signal);
+      if (s.videoBackend === "playsvideo") return applyPlaysVideoSubtitle(request, route, signal);
+      if (s.videoBackend === "default") return applyDefaultSubtitle(request, route, signal);
+      return applyMoviSubtitle(request, route, signal);
     }
 
     function renderSubtitleOptions() {
       const current = s.current;
       const multi = current?.kind === "video" && Boolean(current.embeddedMulti);
-      d.subtitleSelector.hidden = !multi;
+      const canChooseBackend = multi && current?.h5Player === "select";
+      d.videoBackendSelector.hidden = !canChooseBackend;
+      d.videoBackendSelect.value = s.videoBackend;
+      d.subtitleSelector.hidden = !multi || s.videoBackend === "vplayer";
       if (!multi) return;
 
       const options: Array<{ value: SubtitleSelection; label: string }> = [
         { value: "off", label: t("subtitleOff") }
       ];
-      if (s.moviExternalSubtitle) options.push({ value: "external", label: t("externalSubtitle") });
-      for (const [index, track] of s.moviSubtitleTracks.entries()) {
-        options.push({ value: `embedded:${track.id}`, label: subtitleTrackLabel(track, index) });
+      if (s.videoBackend === "movi" && s.moviExternalSubtitle) {
+        options.push({ value: "external", label: t("externalSubtitle") });
+      } else if (s.videoBackend !== "movi" && (s.moviExternalSubtitle || s.externalSubtitleRaw)) {
+        options.push({ value: "external", label: t("externalSubtitle") });
+      }
+      const tracks: VideoSubtitleOption[] = s.videoBackend === "movi"
+        ? s.moviSubtitleTracks.map((track, index) => ({ id: track.id, index, label: subtitleTrackLabel(track, index) }))
+        : s.videoBackend === "playsvideo"
+          ? s.playsVideoTracks
+          : s.videoBackend === "default" && s.nativeEmbeddedSubtitle
+            ? [{ id: 0, index: 0, label: s.nativeEmbeddedSubtitle.label }]
+            : [];
+      for (const track of tracks) {
+        options.push({ value: `embedded:${track.id}`, label: track.label });
       }
       if (!options.some((option) => option.value === s.subtitleSelection)) {
         s.subtitleSelection = s.moviExternalSubtitle
@@ -1866,11 +1917,11 @@ const introMaxSeconds = (() => {
       d.subtitleSelect.value = s.subtitleSelection;
       d.subtitle.hidden = s.subtitleSelection === "off";
       const embeddedId = embeddedSubtitleIndex(s.subtitleSelection);
-      const embeddedTrack = embeddedId >= 0 ? s.moviSubtitleTracks.find((track) => track.id === embeddedId) : undefined;
+      const embeddedTrack = tracks.find((track) => track.id === embeddedId);
       d.subtitleText.textContent = s.subtitleSelection === "external"
         ? "ASS"
         : embeddedTrack
-          ? subtitleTrackLabel(embeddedTrack, s.moviSubtitleTracks.indexOf(embeddedTrack))
+          ? embeddedTrack.label
           : t("noSubtitle");
     }
 
@@ -2277,7 +2328,7 @@ const introMaxSeconds = (() => {
       return true;
     }
 
-    async function loadPlaysVideo(item: MediaItem, request: number, route: number, signal: AbortSignal) {
+    async function loadPlaysVideo(item: MediaItem, request: number, route: number, signal: AbortSignal, shouldPlay: boolean) {
       const { PlaysVideoEngine: Engine } = await import("playsvideo");
       if (!isCurrentItemLoad(request, route, signal)) return false;
       const engine = new Engine(d.video, { embeddedSubtitlePolicy: "off" });
@@ -2296,8 +2347,10 @@ const introMaxSeconds = (() => {
         engine.addEventListener("ready", () => finish(resolve), { once: true });
         engine.addEventListener("error", (event) => finish(() => reject(new Error(event.detail.message))), { once: true });
         engine.addEventListener("subtitle-status", () => {
-          if (!s.playsVideoActive || !s.subtitleSelection.startsWith("embedded:")) return;
-          applyPlaysVideoSubtitle(request, route, signal).catch(() => undefined);
+          if (!s.playsVideoActive) return;
+          collectPlaysVideoTracks();
+          renderSubtitleOptions();
+          if (s.subtitleSelection.startsWith("embedded:")) applyPlaysVideoSubtitle(request, route, signal).catch(() => undefined);
         });
         signal.addEventListener("abort", onAbort, { once: true });
         try {
@@ -2307,16 +2360,204 @@ const introMaxSeconds = (() => {
         }
       });
       await ready;
-      return isCurrentItemLoad(request, route, signal);
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      collectPlaysVideoTracks();
+      if (s.subtitleSelection === "off" && !s.externalSubtitleRaw && s.playsVideoTracks.length) {
+        s.subtitleSelection = `embedded:${s.playsVideoTracks[0].id}`;
+      }
+      renderSubtitleOptions();
+      await applySelectedVideoSubtitle(request, route, signal);
+      return shouldPlay ? startVideoPlayback(request, route, signal) : true;
     }
 
-    async function loadMoviVideo(item: MediaItem, request: number, route: number, signal: AbortSignal) {
+    async function waitForVideoMetadata(media: HTMLVideoElement, signal: AbortSignal) {
+      if (media.readyState >= HTMLMediaElement.HAVE_METADATA) return;
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          media.removeEventListener("loadedmetadata", onReady);
+          media.removeEventListener("error", onError);
+          signal.removeEventListener("abort", onAbort);
+          window.clearTimeout(timeout);
+        };
+        const finish = (callback: () => void) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          callback();
+        };
+        const onReady = () => finish(resolve);
+        const onError = () => finish(() => reject(new Error(t("playFailed"))));
+        const onAbort = () => finish(() => reject(new DOMException("Video loading was aborted.", "AbortError")));
+        const timeout = window.setTimeout(onError, 90000);
+        media.addEventListener("loadedmetadata", onReady, { once: true });
+        media.addEventListener("error", onError, { once: true });
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (media.readyState >= HTMLMediaElement.HAVE_METADATA) onReady();
+      });
+    }
+
+    async function loadDefaultVideo(item: MediaItem, request: number, route: number, signal: AbortSignal, shouldPlay: boolean) {
       if (!item.url) throw new Error(t("playFailed"));
-      const backend = item.h5Player === "playsvideo" ? "playsvideo" : "movi";
+      s.videoBackend = "default";
+      s.moviActive = false;
+      s.playsVideoActive = false;
+      s.playsVideoTracks = [];
+      s.moviSubtitleTracks = [];
+      s.moviExternalSubtitle = null;
+      s.externalSubtitleRaw = null;
+      s.nativeEmbeddedSubtitle = null;
+      d.videoFrame.dataset.backend = "native";
+      d.video.hidden = false;
+      d.movi.hidden = true;
+      d.vplayerHost.hidden = true;
+      d.video.poster = item.poster || "/poster.svg";
+
+      try {
+        if (item.sub) s.externalSubtitleRaw = await loadExternalVideoSubtitle(item, signal);
+        if (!s.externalSubtitleRaw?.trim()) {
+          s.nativeEmbeddedSubtitle = (await parseEmbeddedVideoSubtitles(item, request, route, signal))[0] || null;
+        }
+      } catch {
+        if (signal.aborted) throw new DOMException("Video loading was aborted.", "AbortError");
+      }
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      s.subtitleSelection = s.externalSubtitleRaw?.trim()
+        ? "external"
+        : s.nativeEmbeddedSubtitle ? "embedded:0" : "off";
+      d.video.src = item.url;
+      d.video.load();
+      renderSubtitleOptions();
+      if (s.subtitleSelection !== "off") await applyDefaultSubtitle(request, route, signal);
+      await waitForVideoMetadata(d.video, signal);
+      return shouldPlay ? startVideoPlayback(request, route, signal) : true;
+    }
+
+    async function loadVPlayer(item: MediaItem, request: number, route: number, signal: AbortSignal, shouldPlay: boolean) {
+      if (!item.url) throw new Error(t("playFailed"));
+      const [reactDom, react, playerModule] = await Promise.all([
+        import("react-dom/client"),
+        import("react"),
+        import("@vplayer/react"),
+        import("@vplayer/react/player.css")
+      ]).then(([dom, reactRuntime, player]) => [dom, reactRuntime, player] as const);
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      s.videoBackend = "vplayer";
+      s.moviActive = false;
+      s.playsVideoActive = false;
+      s.playsVideoTracks = [];
+      s.moviSubtitleTracks = [];
+      s.moviExternalSubtitle = null;
+      d.videoFrame.dataset.backend = "vplayer";
+      d.video.hidden = true;
+      d.movi.hidden = true;
+      d.vplayerHost.hidden = false;
+
+      let subtitleRaw = "";
+      if (item.sub) {
+        try {
+          subtitleRaw = await loadExternalVideoSubtitle(item, signal);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          console.warn("Could not load external video subtitle for VPlayer.", error);
+        }
+      }
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      const subtitles = subtitleRaw.trim() ? [{
+        id: "external-ass",
+        content: assToWebVtt(subtitleRaw),
+        lang: "zh",
+        label: t("externalSubtitle"),
+        format: "vtt",
+        default: true
+      }] : [];
+      const root = reactDom.createRoot(d.vplayerHost);
+      s.vplayerRoot = root;
+      root.render(react.createElement(playerModule.VideoPlayer as any, {
+        src: item.url,
+        title: item.name,
+        poster: item.poster || "/poster.svg",
+        subtitles,
+        embeddedTracks: true,
+        autoPlay: false,
+        defaultHotkeys: false,
+        captionSettingsMenu: false,
+        lang: s.lang === "zh" ? "zh-CN" : s.lang === "ja" ? "ja" : "en",
+        captionSettings: {
+          fontSize: "medium",
+          fontScale: 92,
+          fontFamily: "sans",
+          textColor: "#CCFFFF",
+          textOpacity: 1,
+          backgroundColor: "#000000",
+          backgroundOpacity: 0.3,
+          edgeStyle: "shadow",
+          edgeColor: "#000000",
+          position: 2,
+          lineHeight: 1.2,
+          delay: 0
+        }
+      }));
+
+      const waitForElement = async () => {
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          if (!isCurrentItemLoad(request, route, signal)) return null;
+          const media = d.vplayerHost.querySelector("video");
+          if (media) return media;
+          await new Promise((resolve) => window.setTimeout(resolve, 20));
+        }
+        throw new Error(t("playFailed"));
+      };
+      const media = await waitForElement();
+      if (!media) return false;
+      s.vplayerVideo = media;
+      bindVideoEvents(media);
+      await waitForVideoMetadata(media, signal);
+      if (!isCurrentItemLoad(request, route, signal)) return false;
+      s.externalSubtitleRaw = subtitleRaw;
+      s.moviExternalSubtitle = subtitleRaw.trim() ? "external-ass" : null;
+      s.subtitleSelection = subtitleRaw.trim() ? "external" : "off";
+      renderSubtitleOptions();
+      return shouldPlay ? startVideoPlayback(request, route, signal) : true;
+    }
+
+    async function loadMoviVideo(item: MediaItem, request: number, route: number, signal: AbortSignal, backend: VideoBackend, shouldPlay = true) {
+      if (!item.url) throw new Error(t("playFailed"));
+      if (backend === "default") return loadDefaultVideo(item, request, route, signal, shouldPlay);
+      if (backend === "vplayer") return loadVPlayer(item, request, route, signal, shouldPlay);
+      if (backend === "playsvideo") {
+        s.videoBackend = "playsvideo";
+        s.moviActive = false;
+        d.videoFrame.dataset.backend = "playsvideo";
+        d.video.hidden = false;
+        d.movi.hidden = true;
+        d.vplayerHost.hidden = true;
+        d.video.poster = item.poster || "/poster.svg";
+        s.moviExternalSubtitle = null;
+        s.externalSubtitleRaw = null;
+        s.moviSubtitleTracks = [];
+        s.playsVideoTracks = [];
+        try {
+          if (item.sub) s.externalSubtitleRaw = await loadExternalVideoSubtitle(item, signal);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          console.warn("Could not load external video subtitle for PlaysVideo.", error);
+        }
+        if (!isCurrentItemLoad(request, route, signal)) return false;
+        s.moviExternalSubtitle = s.externalSubtitleRaw?.trim() ? "external-ass" : null;
+        s.subtitleSelection = s.moviExternalSubtitle ? "external" : "off";
+        renderSubtitleOptions();
+        const ready = await loadPlaysVideo(item, request, route, signal, shouldPlay);
+        return ready;
+      }
+
+      s.videoBackend = "movi";
       await import("movi-player/element");
       if (!isCurrentItemLoad(request, route, signal)) return false;
       s.moviActive = true;
       s.playsVideoActive = false;
+      s.playsVideoTracks = [];
+      s.nativeEmbeddedSubtitle = null;
       s.moviSubtitleTracks = [];
       s.moviSubtitleFonts = [];
       s.moviExternalSubtitle = null;
@@ -2324,6 +2565,7 @@ const introMaxSeconds = (() => {
       d.videoFrame.dataset.backend = "movi";
       d.video.hidden = true;
       d.movi.hidden = false;
+      d.vplayerHost.hidden = true;
       installMoviSubtitleStyle();
       d.movi.poster = item.poster || "/poster.svg";
 
@@ -2361,7 +2603,7 @@ const introMaxSeconds = (() => {
       const player = d.movi.player;
       if (!player) throw new Error(t("playFailed"));
       s.moviSubtitleTracks = player.getSubtitleTracks().slice();
-      if (backend === "movi" && s.moviSubtitleTracks.some(isAssMoviTrack)) {
+      if (s.moviSubtitleTracks.some(isAssMoviTrack)) {
         try {
           s.moviSubtitleFonts = await extractMkvFonts(item.url, signal);
         } catch (error) {
@@ -2371,11 +2613,7 @@ const introMaxSeconds = (() => {
       }
       if (!isCurrentItemLoad(request, route, signal)) return false;
       try {
-        if (item.sub && backend === "movi") await loadMoviExternalSubtitle(item, signal);
-        else if (item.sub) {
-          s.externalSubtitleRaw = await loadExternalVideoSubtitle(item, signal);
-          if (s.externalSubtitleRaw?.trim()) s.moviExternalSubtitle = "external-ass";
-        }
+        if (item.sub) await loadMoviExternalSubtitle(item, signal);
       } catch {
         console.warn(`Could not load external video subtitle for ${backend}.`);
       }
@@ -2386,24 +2624,20 @@ const introMaxSeconds = (() => {
         s.subtitleSelection = s.moviSubtitleTracks[0] ? `embedded:${s.moviSubtitleTracks[0].id}` : "off";
       }
       renderSubtitleOptions();
-      if (backend === "playsvideo") {
-        releaseMoviSource();
-        d.movi.hidden = true;
-        d.video.hidden = false;
-        d.videoFrame.dataset.backend = "playsvideo";
-        const ready = await loadPlaysVideo(item, request, route, signal);
-        if (!ready) return false;
-        renderSubtitleOptions();
-        await applySelectedVideoSubtitle(request, route, signal);
-        return await startVideoPlayback(request, route, signal);
-      }
       await applySelectedVideoSubtitle(request, route, signal);
-      return await startVideoPlayback(request, route, signal);
+      return shouldPlay ? startVideoPlayback(request, route, signal) : true;
     }
 
     d.video.textTracks.addEventListener("addtrack", () => {
-      if (!s.playsVideoActive || !s.subtitleSelection.startsWith("embedded:") || !subtitleAbortController) return;
-      applyPlaysVideoSubtitle(itemRequest, routeRequest, subtitleAbortController.signal).catch(() => undefined);
+      if (!s.playsVideoActive) return;
+      collectPlaysVideoTracks();
+      if (s.subtitleSelection === "off" && s.playsVideoTracks.length) {
+        s.subtitleSelection = `embedded:${s.playsVideoTracks[0].id}`;
+      }
+      renderSubtitleOptions();
+      if (s.subtitleSelection.startsWith("embedded:") && subtitleAbortController) {
+        applyPlaysVideoSubtitle(itemRequest, routeRequest, subtitleAbortController.signal).catch(() => undefined);
+      }
     });
 
     d.movi.addEventListener("trackschange", () => {
@@ -2421,7 +2655,7 @@ const introMaxSeconds = (() => {
     });
 
     async function changeVideoSubtitle(value: string) {
-      if (!s.current?.embeddedMulti || s.current.kind !== "video") return;
+      if (!s.current?.embeddedMulti || s.current.kind !== "video" || s.videoBackend !== "movi") return;
       const selection: SubtitleSelection = value === "external" || value === "off" || value.startsWith("embedded:")
         ? value as SubtitleSelection
         : "off";
@@ -2439,6 +2673,45 @@ const introMaxSeconds = (() => {
           s.subtitleSelection = "off";
           renderSubtitleOptions();
           setStatus(d.playerStatus, error instanceof Error ? error.message : t("subFailed"), "error");
+        }
+      }
+    }
+
+    async function changeVideoBackend(value: string) {
+      if (!s.current?.embeddedMulti || s.current.h5Player !== "select") return;
+      const backend: VideoBackend = value === "playsvideo" || value === "movi" || value === "vplayer" ? value : "default";
+      if (backend === s.videoBackend) return;
+      const item = s.current;
+      const previousMedia = activeVideo();
+      const shouldPlay = !previousMedia.paused;
+      saveProgress(true);
+      const request = itemRequest;
+      const route = routeRequest;
+      subtitleAbortController?.abort();
+      const controller = new AbortController();
+      subtitleAbortController = controller;
+      const signal = controller.signal;
+
+      await destroyVideoSubtitle();
+      destroyPlaysVideo();
+      destroyMoviVideo();
+      destroyVPlayer();
+      d.video.pause();
+      d.video.removeAttribute("src");
+      d.video.load();
+      s.videoBackend = backend;
+      s.playsVideoTracks = [];
+      s.nativeEmbeddedSubtitle = null;
+      s.moviSubtitleTracks = [];
+      s.moviExternalSubtitle = null;
+      s.externalSubtitleRaw = null;
+      s.subtitleSelection = "off";
+      renderSubtitleOptions();
+      try {
+        await loadMoviVideo(item, request, route, signal, backend, shouldPlay);
+      } catch (error) {
+        if (isCurrentItemLoad(request, route, signal)) {
+          setStatus(d.playerStatus, error instanceof Error ? error.message : t("playFailed"), "error");
         }
       }
     }
@@ -2481,6 +2754,9 @@ const introMaxSeconds = (() => {
       await clearMedia();
       if (!isCurrentItemLoad(request, route, itemController.signal)) return;
       s.current = item;
+      s.videoBackend = item.embeddedMulti
+        ? item.h5Player === "select" ? "default" : item.h5Player || "movi"
+        : "default";
       s.subtitleSelection = item.embeddedMulti
         ? item.sub ? "external" : "off"
         : "off";
@@ -2537,13 +2813,14 @@ const introMaxSeconds = (() => {
         subtitleAbortController = subtitleController;
         if (item.embeddedMulti) {
           try {
-            videoPlaybackStarted = await loadMoviVideo(item, request, route, subtitleController.signal);
+            videoPlaybackStarted = await loadMoviVideo(item, request, route, subtitleController.signal, s.videoBackend);
           } catch (error) {
             if (isCurrentItemLoad(request, route, subtitleController.signal)) {
               setStatus(d.playerStatus, error instanceof Error ? error.message : t("playFailed"), "error");
             }
           }
         } else {
+          s.videoBackend = "default";
           d.video.src = item.url || "";
           d.video.load();
           let embedded: EmbeddedSubtitle | undefined;
@@ -2742,6 +3019,9 @@ const introMaxSeconds = (() => {
     d.subtitleSelect.addEventListener("change", () => {
       changeVideoSubtitle(d.subtitleSelect.value).catch((error) => setStatus(d.playerStatus, error.message, "error"));
     });
+    d.videoBackendSelect.addEventListener("change", () => {
+      changeVideoBackend(d.videoBackendSelect.value).catch((error) => setStatus(d.playerStatus, error.message, "error"));
+    });
     d.muteToggle.addEventListener("click", () => {
       const media = activeVideo();
       media.muted = !media.muted;
@@ -2749,12 +3029,14 @@ const introMaxSeconds = (() => {
     });
     d.fullscreenToggle.addEventListener("click", () => toggleFullscreen().catch(() => undefined));
     const isMoviEventTarget = (target: EventTarget | null) => s.moviActive && (target === d.movi || (target instanceof Node && d.movi.contains(target)));
+    const isVPlayerEventTarget = (target: EventTarget | null) => s.videoBackend === "vplayer" && target instanceof Node && d.vplayerHost.contains(target);
+    const isManagedPlayerTarget = (target: EventTarget | null) => isMoviEventTarget(target) || isVPlayerEventTarget(target);
     d.videoFrame.addEventListener("click", (event) => {
       // Movi owns its controls for H5-difficult files. Events from its shadow
       // tree are retargeted to the custom element, so do not let the page-level
       // double-click handler turn a native player button click into a seek or
       // play/pause action.
-      if (d.videoControls.contains(event.target as Node) || isMoviEventTarget(event.target)) return;
+      if (d.videoControls.contains(event.target as Node) || isManagedPlayerTarget(event.target)) return;
       window.clearTimeout(videoClickTimer);
       if (event.detail === 2) {
         const media = activeVideo();
@@ -2769,7 +3051,7 @@ const introMaxSeconds = (() => {
       videoClickTimer = window.setTimeout(() => toggleVideoControls(), 250);
     });
     d.videoFrame.addEventListener("pointerdown", (event) => {
-      if (isMoviEventTarget(event.target)) return;
+      if (isManagedPlayerTarget(event.target)) return;
       d.videoFrame.focus({ preventScroll: true });
     });
     d.videoFrame.addEventListener("pointermove", () => {
@@ -2779,7 +3061,7 @@ const introMaxSeconds = (() => {
       scheduleControls();
     });
     d.videoFrame.addEventListener("contextmenu", (event) => {
-      if (!d.videoControls.contains(event.target as Node) && !isMoviEventTarget(event.target)) event.preventDefault();
+      if (!d.videoControls.contains(event.target as Node) && !isManagedPlayerTarget(event.target)) event.preventDefault();
     });
     d.videoControls.addEventListener("pointerenter", () => showControls());
     d.videoControls.addEventListener("pointerleave", () => scheduleControls());
@@ -2841,12 +3123,16 @@ const introMaxSeconds = (() => {
     }
 
     const videoEvents = ["play", "pause", "ended", "timeupdate", "seeked", "durationchange", "loadedmetadata", "volumechange", "ratechange", "waiting", "stalled", "canplay", "playing", "error"];
-    for (const media of [d.video, d.movi] as VideoMedia[]) {
+    const boundVideoMedia = new WeakSet<EventTarget>();
+    function bindVideoEvents(media: VideoMedia) {
+      if (boundVideoMedia.has(media)) return;
+      boundVideoMedia.add(media);
       for (const event of videoEvents) media.addEventListener(event, () => {
         if (event === "loadedmetadata") restoreProgress(media);
         handleVideoEvent(media, event);
       });
     }
+    for (const media of [d.video, d.movi] as VideoMedia[]) bindVideoEvents(media);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && d.app.classList.contains("is-library-open")) {
         setLibraryOpen(false);
@@ -2855,7 +3141,7 @@ const introMaxSeconds = (() => {
       if (d.videoFrame.hidden) return;
       // Movi receives keyboard input for its own controls and timeline. Do not
       // run the page-level shortcuts a second time for the same key event.
-      if (s.moviActive) return;
+      if (ownsVideoControls()) return;
       const active = document.activeElement;
       const controlsPlayer = isVideoFullscreen() || active === d.videoFrame || (active instanceof Node && d.videoFrame.contains(active));
       if (!controlsPlayer || active instanceof HTMLInputElement) return;

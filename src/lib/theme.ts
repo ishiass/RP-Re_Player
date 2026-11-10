@@ -1,5 +1,5 @@
 import type { AppEnv } from "./cloudflare";
-import { THEME_KV_KEY, THEME_KV_READY_KEY, usesKvForPseudoAndTheme } from "./storage";
+import { THEME_KV_KEY, usesKvForPseudoAndTheme } from "./storage";
 
 export const visitorThemes = ["blue", "retro", "future", "tech", "gray"] as const;
 export type VisitorTheme = (typeof visitorThemes)[number];
@@ -38,25 +38,12 @@ export async function getVisitorThemeFromD1(env: AppEnv): Promise<VisitorTheme> 
     .bind("visitor_theme")
     .first<{ value: string }>()
     .catch(() => null);
-  const theme = normalizeVisitorTheme(legacy?.value);
-  if (legacy?.value) {
-    await env.D1!.prepare("INSERT OR REPLACE INTO rp_visitor_theme (id, value) VALUES (1, ?)")
-      .bind(theme)
-      .run();
-  }
-  return theme;
-}
-
-async function ensureKvThemeReady(env: AppEnv) {
-  if (!env.KV || await env.KV.get(THEME_KV_READY_KEY) === "1") return;
-  await env.KV.put(THEME_KV_KEY, await getVisitorThemeFromD1(env));
-  await env.KV.put(THEME_KV_READY_KEY, "1");
+  return normalizeVisitorTheme(legacy?.value);
 }
 
 export async function getVisitorTheme(env: AppEnv): Promise<VisitorTheme> {
   if (usesKvForPseudoAndTheme(env)) {
     try {
-      await ensureKvThemeReady(env);
       const value = await env.KV!.get(THEME_KV_KEY);
       if (value) return normalizeVisitorTheme(value);
     } catch {
@@ -68,14 +55,30 @@ export async function getVisitorTheme(env: AppEnv): Promise<VisitorTheme> {
 
 export async function setVisitorTheme(env: AppEnv, value: unknown): Promise<VisitorTheme> {
   const theme = normalizeVisitorTheme(value);
-  if (await ensureThemeTable(env)) {
-    await env.D1!.prepare("INSERT OR REPLACE INTO rp_visitor_theme (id, value) VALUES (1, ?)")
-      .bind(theme)
-      .run();
-  }
   if (usesKvForPseudoAndTheme(env)) {
-    await ensureKvThemeReady(env);
-    await env.KV!.put(THEME_KV_KEY, theme);
+    const current = await env.KV!.get(THEME_KV_KEY);
+    if (current !== theme) await env.KV!.put(THEME_KV_KEY, theme);
+    const stored = await env.KV!.get(THEME_KV_KEY);
+    if (stored && await ensureThemeTable(env)) {
+      const backup = await env.D1!.prepare("SELECT value FROM rp_visitor_theme WHERE id = 1")
+        .first<{ value: string }>();
+      const storedTheme = normalizeVisitorTheme(stored);
+      if (backup?.value !== storedTheme) {
+        await env.D1!.prepare("INSERT OR REPLACE INTO rp_visitor_theme (id, value) VALUES (1, ?)")
+          .bind(storedTheme)
+          .run();
+      }
+    }
+    return normalizeVisitorTheme(stored || theme);
+  }
+  if (await ensureThemeTable(env)) {
+    const backup = await env.D1!.prepare("SELECT value FROM rp_visitor_theme WHERE id = 1")
+      .first<{ value: string }>();
+    if (backup?.value !== theme) {
+      await env.D1!.prepare("INSERT OR REPLACE INTO rp_visitor_theme (id, value) VALUES (1, ?)")
+        .bind(theme)
+        .run();
+    }
   }
   return theme;
 }

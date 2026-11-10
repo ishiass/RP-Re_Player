@@ -26,9 +26,11 @@ Re Player is a **link-based media library**. An administrator mounts external vi
 **Repository**: [github.com/lircia/RP-Re_Player](https://github.com/lircia/RP-Re_Player)
 
 > [!NOTE]
-> This project is open-sourced under the **MIT** license. You are free to use, modify, and redistribute it.
+> Re Player's original source code is licensed under **MIT**. Third-party components retain their own licenses and notices.
 >
 > The project includes `movi-player` 0.4.1, which is distributed under the Apache License 2.0 together with its listed third-party components. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and the included [movi-player license text](THIRD-PARTY-NOTICES) for the applicable notices.
+>
+> The optional H5-difficult playback backends also include `playsvideo` 0.4.7 (MIT) and `@vplayer/react` 0.4.5. The VPlayer repository/package currently has no declared license; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) before distributing a build that contains it.
 
 ## 🚀 Quick Start
 
@@ -130,7 +132,7 @@ The D1 binding name must remain `D1`. Also configure a KV namespace binding name
 
 When D1 is available, RP seeds `rp_settings` from non-empty `A`, `B`, `C`, `N`, `P`, `US`, `UI`, `UH`, and `UD` bindings when their `env:VARIABLE` keys are missing; stored values take priority on later deployments. `WM` and `PBN` are read directly from the runtime environment and are not stored in D1, so they can be adjusted there without changing saved settings. `keep_vars = true` also prevents Wrangler from deleting variables configured in the Cloudflare dashboard.
 
-Pseudo-mount links and the visitor theme use KV only when `DB` is set to `kv` and the `KV` binding exists; without that binding, or for any other `DB` value, they automatically use D1. Playback progress, analytics, visitor events, settings, and migration state always remain in D1. In KV mode, mount creation/deletion and theme changes are also written to D1 as backups. If KV initialization markers are missing, the KV data is rebuilt from those D1 backups.
+Pseudo-mount links and the visitor theme use KV only when `DB` is set to `kv` and the `KV` binding exists; without that binding, or for any other `DB` value, they automatically use D1. Playback progress, analytics, visitor events, settings, and migration state always remain in D1. In KV mode, admin mount changes and theme switches are the only operations that write KV. D1 backups are read from KV after those changes and updated only when the stored content differs; normal reads never write KV or restore D1 data into KV. The `/setup` page shows the current time, request IP, hostname, visitor theme, and actual pseudo-mount storage type, without exposing credentials or binding IDs.
 
 ## 📖 Details
 
@@ -178,8 +180,10 @@ RP-Re_Player
 - [Astro](https://astro.build) — Web framework
 - [JASSUB](https://github.com/ThaUnknown/jassub) / [libass](https://github.com/libass/libass) — ASS subtitle rendering
 - [movi-player](https://github.com/MrUjjwalG/movi-player) — media player
+- [PlaysVideo](https://github.com/kzahel/playsvideo) — optional H5-difficult playback
+- [VPlayer](https://github.com/tgdrive/vplayer) — optional React player for H5-difficult playback
 - [Umami](https://umami.is) — optional website analytics
 
 ## ⚖️ License
 
-The original Re Player source code is licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; in particular, `movi-player` 0.4.1 is licensed under Apache License 2.0. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) before redistributing a build.
+The original Re Player source code is licensed under the [MIT License](LICENSE). Third-party dependencies retain their own licenses. `movi-player` 0.4.1 is licensed under Apache License 2.0 and `playsvideo` 0.4.7 under MIT. The upstream VPlayer repository and npm package currently declare no license, so permission to redistribute VPlayer or a build containing it has not been verified. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) before redistributing a build.

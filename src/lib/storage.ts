@@ -2,8 +2,6 @@ import type { AppEnv } from "./cloudflare";
 
 export const PSEUDO_KV_PREFIX = "rp:v1:pseudo:";
 export const THEME_KV_KEY = "rp:v1:visitor-theme";
-export const PSEUDO_KV_READY_KEY = "rp:v1:storage:pseudo-ready";
-export const THEME_KV_READY_KEY = "rp:v1:storage:theme-ready";
 
 export function usesKvForPseudoAndTheme(env: AppEnv) {
   return String(env.DB || "").trim().toLowerCase() === "kv" && Boolean(env.KV);

@@ -1,8 +1,8 @@
 import type { AppEnv } from "./cloudflare";
-import { PSEUDO_KV_PREFIX, PSEUDO_KV_READY_KEY, pseudoKvKey, usesKvForPseudoAndTheme } from "./storage";
+import { PSEUDO_KV_PREFIX, pseudoKvKey, usesKvForPseudoAndTheme } from "./storage";
 
 export type PseudoKind = "video" | "audio" | "image" | "file";
-export type H5Player = "playsvideo" | "movi";
+export type H5Player = "playsvideo" | "movi" | "vplayer" | "select";
 
 export interface PseudoItem {
   id: string;
@@ -189,7 +189,11 @@ function mapRow(row: any): PseudoItem {
     poster: row.poster || undefined,
     sub: row.sub || undefined,
     embeddedMulti: Boolean(row.embedded_multi),
-    h5Player: row.embedded_player === "playsvideo" ? "playsvideo" : row.embedded_multi ? "movi" : undefined,
+    h5Player: ["playsvideo", "movi", "vplayer", "select"].includes(row.embedded_player)
+      ? row.embedded_player
+      : row.embedded_multi
+        ? "movi"
+        : undefined,
     lrc: row.lrc || undefined,
     lrc2: row.lrc2 || undefined,
     createdAt: row.created_at,
@@ -207,43 +211,74 @@ async function allItemsFromD1(env: AppEnv): Promise<PseudoItem[]> {
   return [...memory().items].sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
 }
 
-async function writeItemToKv(env: AppEnv, item: PseudoItem, preserveNewer = false) {
-  const key = await pseudoKvKey(item.path);
-  const current = await env.KV!.get(key);
-  if (current) {
-    try {
-      const currentItem = JSON.parse(current) as PseudoItem;
-      if (preserveNewer && currentItem.updatedAt && currentItem.updatedAt > item.updatedAt) return;
-    } catch {
-      // Replace malformed stored values from the D1 backup.
-    }
+async function allItemsFromD1Backup(env: AppEnv): Promise<PseudoItem[]> {
+  if (!env.D1) return [];
+  try {
+    const result = await env.D1.prepare(
+      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links ORDER BY path ASC"
+    ).all<any>();
+    return (result.results ?? []).map(mapRow);
+  } catch {
+    return [];
   }
+}
+
+function sameItem(left: PseudoItem, right: PseudoItem) {
+  const fields: Array<keyof PseudoItem> = [
+    "id", "name", "path", "url", "kind", "description", "poster", "sub",
+    "embeddedMulti", "h5Player", "lrc", "lrc2", "createdAt", "updatedAt"
+  ];
+  return fields.every((field) => (left[field] ?? "") === (right[field] ?? ""));
+}
+
+async function backupItemToD1(env: AppEnv, item: PseudoItem) {
+  if (!(await ensureDb(env))) return;
+  const existing = await env.D1!.prepare(
+    "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
+  ).bind(item.path).first<any>();
+  if (existing && sameItem(mapRow(existing), item)) return;
+
+  await env.D1!.prepare(`
+    INSERT INTO rp_pseudo_links (id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(path) DO UPDATE SET
+      id = excluded.id,
+      name = excluded.name,
+      url = excluded.url,
+      kind = excluded.kind,
+      description = excluded.description,
+      poster = excluded.poster,
+      sub = excluded.sub,
+      embedded_multi = excluded.embedded_multi,
+      embedded_player = excluded.embedded_player,
+      lrc = excluded.lrc,
+      lrc2 = excluded.lrc2,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at
+  `).bind(
+    item.id,
+    item.name,
+    item.path,
+    item.url,
+    item.kind,
+    item.description ?? null,
+    item.poster ?? null,
+    item.sub ?? null,
+    item.embeddedMulti ? 1 : 0,
+    item.h5Player ?? null,
+    item.lrc ?? null,
+    item.lrc2 ?? null,
+    item.createdAt,
+    item.updatedAt
+  ).run();
+}
+
+async function writeItemToKv(env: AppEnv, item: PseudoItem) {
+  const key = await pseudoKvKey(item.path);
   await env.KV!.put(key, JSON.stringify(item));
 }
 
-async function ensureKvPseudoReady(env: AppEnv) {
-  if (!env.KV || await env.KV.get(PSEUDO_KV_READY_KEY) === "1") return;
-  const backup = await allItemsFromD1(env);
-  for (let start = 0; start < backup.length; start += 50) {
-    await Promise.all(backup.slice(start, start + 50).map((item) => writeItemToKv(env, item, true)));
-  }
-  const liveKeys = new Set(await Promise.all(backup.map((item) => pseudoKvKey(item.path))));
-  let cursor: string | undefined;
-  do {
-    const page = await env.KV.list({
-      prefix: PSEUDO_KV_PREFIX,
-      limit: 1000,
-      ...(cursor ? { cursor } : {})
-    });
-    const staleKeys = page.keys.map(({ name }) => name).filter((key) => !liveKeys.has(key));
-    await Promise.all(staleKeys.map((key) => env.KV!.delete(key)));
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  await env.KV.put(PSEUDO_KV_READY_KEY, "1");
-}
-
 async function allItemsFromKv(env: AppEnv): Promise<PseudoItem[]> {
-  await ensureKvPseudoReady(env);
   const items: PseudoItem[] = [];
   let cursor: string | undefined;
   do {
@@ -257,8 +292,12 @@ async function allItemsFromKv(env: AppEnv): Promise<PseudoItem[]> {
       const values = await Promise.all(keys.map(({ name }) => env.KV!.get(name)));
       for (const value of values) {
         if (!value) continue;
-        const item = JSON.parse(value) as PseudoItem;
-        if (item && typeof item.path === "string" && typeof item.id === "string") items.push(item);
+        try {
+          const item = JSON.parse(value) as PseudoItem;
+          if (item && typeof item.path === "string" && typeof item.id === "string") items.push(item);
+        } catch {
+          // Ignore malformed values without mutating KV during reads.
+        }
       }
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -269,7 +308,10 @@ async function allItemsFromKv(env: AppEnv): Promise<PseudoItem[]> {
 export async function allItems(env: AppEnv): Promise<PseudoItem[]> {
   if (usesKvForPseudoAndTheme(env)) {
     try {
-      return await allItemsFromKv(env);
+      const [backup, live] = await Promise.all([allItemsFromD1Backup(env), allItemsFromKv(env)]);
+      const byPath = new Map(backup.map((item) => [item.path, item]));
+      for (const item of live) byPath.set(item.path, item);
+      return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
     } catch {
       return allItemsFromD1(env);
     }
@@ -365,14 +407,29 @@ export async function getItem(env: AppEnv, path: string) {
   const normalized = normalizeRootPath(path);
   if (usesKvForPseudoAndTheme(env)) {
     try {
-      await ensureKvPseudoReady(env);
       const value = await env.KV!.get(await pseudoKvKey(normalized));
-      return value ? JSON.parse(value) as PseudoItem : null;
+      if (value) {
+        const item = JSON.parse(value) as PseudoItem;
+        if (item && typeof item.path === "string" && typeof item.id === "string") return item;
+      }
     } catch {
-      return getItemFromD1(env, normalized);
+      // Fall back to the read-only D1 backup if KV is unavailable or malformed.
     }
+    return getItemFromD1Backup(env, normalized);
   }
   return getItemFromD1(env, normalized);
+}
+
+async function getItemFromD1Backup(env: AppEnv, normalized: string) {
+  if (!env.D1) return null;
+  try {
+    const row = await env.D1.prepare(
+      "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE path = ? LIMIT 1"
+    ).bind(normalized).first<any>();
+    return row ? mapRow(row) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function getItemFromD1(env: AppEnv, normalized: string) {
@@ -410,7 +467,9 @@ export async function createItem(
   assertRoutableSegment(name, "Name");
   const path = `${folder.replace(/\/+$/, "")}/${name}`;
   const now = new Date().toISOString();
-  const selectedH5Player = input.h5Player === "playsvideo" || input.h5Player === "movi" ? input.h5Player : undefined;
+  const selectedH5Player = ["playsvideo", "movi", "vplayer", "select"].includes(input.h5Player || "")
+    ? input.h5Player
+    : undefined;
   const embeddedMulti = input.kind === "video" && (Boolean(input.embeddedMulti) || Boolean(selectedH5Player));
   const item: PseudoItem = {
     id: crypto.randomUUID(),
@@ -440,6 +499,15 @@ export async function createItem(
   }
 
   const kvMode = usesKvForPseudoAndTheme(env);
+  if (kvMode) {
+    await writeItemToKv(env, item);
+    const storedValue = await env.KV!.get(await pseudoKvKey(item.path));
+    if (!storedValue) throw new Error("The mounted item could not be read back from KV.");
+    const storedItem = JSON.parse(storedValue) as PseudoItem;
+    await backupItemToD1(env, storedItem);
+    return storedItem;
+  }
+
   const dbReady = await ensureDb(env);
   if (dbReady) {
     const result = await env.D1!.prepare(
@@ -493,10 +561,7 @@ export async function createItem(
     if (!result.meta.changes) throw new Error("This path conflicts with another media item.");
   }
 
-  if (kvMode) {
-    await ensureKvPseudoReady(env);
-    await writeItemToKv(env, item);
-  } else if (!dbReady) {
+  if (!dbReady) {
     const state = memory();
     if (pathConflict(state.items, path)) throw new Error("This path conflicts with another media item.");
     state.items = [item, ...state.items.filter((existing) => existing.path !== item.path)];
@@ -511,22 +576,22 @@ export async function deleteItem(env: AppEnv, pathOrId: string) {
   let item = kvMode
     ? (await allItems(env)).find((candidate) => candidate.id === pathOrId || candidate.path === normalized)
     : undefined;
+  if (kvMode && env.KV) {
+    const targetPath = item?.path || (String(pathOrId).startsWith("/") ? normalized : "");
+    if (targetPath) {
+      const key = await pseudoKvKey(targetPath);
+      if (await env.KV.get(key)) await env.KV.delete(key);
+      if (await env.KV.get(key)) throw new Error("The mounted item could not be removed from KV.");
+    }
+  }
+
   const dbReady = await ensureDb(env);
   if (dbReady) {
-    if (kvMode && !item) {
-      const row = await env.D1!.prepare(
-        "SELECT id, name, path, url, kind, description, poster, sub, embedded_multi, embedded_player, lrc, lrc2, created_at, updated_at FROM rp_pseudo_links WHERE id = ? OR path = ? LIMIT 1"
-      ).bind(pathOrId, normalized).first<any>();
-      if (row) item = mapRow(row);
-    }
     await env.D1!.prepare("DELETE FROM rp_pseudo_links WHERE id = ? OR path = ?")
       .bind(pathOrId, normalizeRootPath(pathOrId))
       .run();
   }
-  if (kvMode && env.KV) {
-    await ensureKvPseudoReady(env);
-    if (item) await env.KV.delete(await pseudoKvKey(item.path));
-  } else if (!dbReady) {
+  if (!kvMode && !dbReady) {
     const state = memory();
     state.items = state.items.filter((item) => item.id !== pathOrId && item.path !== normalized);
   }

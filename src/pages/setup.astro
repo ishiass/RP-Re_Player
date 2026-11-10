@@ -1,0 +1,71 @@
+---
+import SiteShell from "../layouts/SiteShell.astro";
+import { getEnv } from "@lib/cloudflare";
+import { getVisitorTheme } from "@lib/theme";
+import { usesKvForPseudoAndTheme } from "@lib/storage";
+
+const env = await getEnv(Astro);
+const theme = await getVisitorTheme(env);
+const ipHeader = (
+  Astro.request.headers.get("cf-connecting-ip") ||
+  Astro.request.headers.get("x-forwarded-for")?.split(",")[0] ||
+  ""
+).trim();
+const requestIp = ipHeader.length <= 64 && /^[0-9a-f:.]+$/i.test(ipHeader) ? ipHeader : "不可用";
+const pseudoDatabase = usesKvForPseudoAndTheme(env)
+  ? "KV"
+  : env.D1
+    ? "D1"
+    : "Memory";
+const rows = [
+  ["当前时间 (UTC)", new Date().toISOString()],
+  ["请求 IP", requestIp],
+  ["当前访问域名", Astro.url.host],
+  ["当前访客主题", theme],
+  ["伪挂载数据库", pseudoDatabase]
+];
+---
+
+<SiteShell title="运行状态 | Re Player">
+  <main class="setup-page">
+    <h1>运行状态</h1>
+    <ul>
+      {rows.map(([label, value]) => <li>{label}：{value}</li>)}
+    </ul>
+  </main>
+</SiteShell>
+
+<style>
+  .setup-page {
+    width: min(100% - 32px, 760px);
+    margin: 0 auto;
+    padding: clamp(32px, 8vh, 88px) 0;
+  }
+
+  h1 {
+    margin: 0 0 24px;
+    color: #263b4c;
+    font-size: 1.25rem;
+    font-weight: 650;
+  }
+
+  ul {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    width: fit-content;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    background: linear-gradient(100deg, #b71c1c 0%, #c15c00 16%, #9a7800 32%, #237a37 48%, #00796b 64%, #1559a6 80%, #6a1b9a 100%);
+    background-clip: text;
+    color: transparent;
+    font-size: 1rem;
+    line-height: 1.7;
+    -webkit-background-clip: text;
+  }
+</style>

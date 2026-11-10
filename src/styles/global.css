@@ -474,6 +474,46 @@ textarea:focus-visible {
   --movi-sub-size-mult: 0.92;
 }
 
+.video-frame .vplayer-host {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: none;
+  width: 100%;
+  height: 100%;
+  background: var(--player);
+}
+
+.video-frame[data-backend="vplayer"] .vplayer-host {
+  display: block;
+}
+
+.video-frame[data-backend="vplayer"] .vplayer {
+  width: 100%;
+  height: 100%;
+  --vplayer-accent: var(--accent);
+  --vplayer-bg: var(--player);
+}
+
+.video-frame[data-backend="vplayer"] .vplayer__anchor {
+  width: 100%;
+  height: 100%;
+}
+
+.video-frame[data-backend="vplayer"] .vplayer__media-viewport,
+.video-frame[data-backend="vplayer"] .vplayer video {
+  width: 100%;
+  height: 100%;
+}
+
+.video-frame[data-backend="vplayer"] .vplayer video {
+  position: relative;
+  inset: auto;
+  display: block;
+  background: transparent;
+  object-fit: contain;
+}
+
 .video-frame[data-backend="movi"] video {
   display: none;
 }
@@ -485,7 +525,8 @@ textarea:focus-visible {
 /* H5-difficult files use Movi's own controls. Its timeline is driven by the
    same decoded clock as the canvas, so the page-level range input cannot drift
    away from the picture while a file is being buffered or sought. */
-.video-frame[data-backend="movi"] .video-controls {
+.video-frame[data-backend="movi"] .video-controls,
+.video-frame[data-backend="vplayer"] .video-controls {
   display: none;
 }
 
@@ -911,10 +952,37 @@ textarea:focus-visible {
 }
 
 .media-labels {
+  position: relative;
   display: flex;
   align-items: center;
   min-height: 23px;
   gap: 7px;
+}
+
+.video-backend-selector {
+  position: absolute;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+.video-backend-selector[hidden] {
+  display: none;
+}
+
+.video-backend-selector select {
+  min-width: 108px;
+  max-width: min(180px, 38vw);
+  height: 25px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 22px 0 8px;
+  font: inherit;
+  font-size: 11px;
+  outline: none;
 }
 
 .subtitle-selector {
